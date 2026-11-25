@@ -116,29 +116,75 @@ function splitHoursToBlocks(totalHours) {
   return blocks;
 }
 
-// Parser baris CSV/TSV yang aman terhadap tanda kutip (misal "Budi Santoso, M.Si")
-function parseDelimitedLine(line, sep) {
-  if (sep === '\t') return line.split('\t').map(x => x.trim());
-  const result = [];
-  let cur = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
+// ============================================================================
+// PARSER CSV/TSV TAHAN KOMA & MULTI-BARIS DALAM SEL (RFC 4180)
+// ============================================================================
+function parseFullTableText(rawText) {
+  const clean = rawText.replace(/^\uFEFF/, '').trim();
+  if (!clean) return [];
+
+  // Deteksi pemisah dari baris pertama di luar tanda kutip
+  let sep = ',';
+  let inQ = false;
+  for (let i = 0; i < clean.length; i++) {
+    const ch = clean[i];
+    if (ch === '"') inQ = !inQ;
+    else if (!inQ && (ch === '\n' || ch === '\r')) break;
+    else if (!inQ && ch === '\t') { sep = '\t'; break; }
+    else if (!inQ && ch === ';') { sep = ';'; break; }
+  }
+
+  const rows = [];
+  let row = [];
+  let cell = '';
+  inQ = false;
+
+  for (let i = 0; i < clean.length; i++) {
+    const ch = clean[i];
+    const next = clean[i + 1];
+
     if (ch === '"') {
-      inQuotes = !inQuotes;
-    } else if (ch === sep && !inQuotes) {
-      result.push(cur.trim());
-      cur = '';
+      if (inQ && next === '"') {
+        cell += '"';
+        i++;
+      } else {
+        inQ = !inQ;
+      }
+    } else if (ch === sep && !inQ) {
+      row.push(cell.replace(/\s+/g, ' ').trim());
+      cell = '';
+    } else if ((ch === '\r' || ch === '\n') && !inQ) {
+      if (ch === '\r' && next === '\n') i++;
+      row.push(cell.replace(/\s+/g, ' ').trim());
+      if (row.some(c => c !== '')) rows.push(row);
+      row = [];
+      cell = '';
     } else {
-      cur += ch;
+      cell += ch;
     }
   }
-  result.push(cur.trim());
-  return result;
+  row.push(cell.replace(/\s+/g, ' ').trim());
+  if (row.some(c => c !== '')) rows.push(row);
+
+  return rows;
+}
+
+// Membuat singkatan kode otomatis dari nama guru (mengabaikan gelar depan/belakang)
+function generateTeacherCode(fullName, fallbackIndex) {
+  const tanpaGelarBelakang = fullName.split(',')[0].trim();
+  const bersih = tanpaGelarBelakang.replace(/^(Drs\.|Dra\.|Dr\.|Ir\.|H\.|Hj\.|Prof\.|S\.Pd\.?|M\.Pd\.?|M\.Si\.?)\s+/gi, '').trim();
+  const words = bersih.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    return (words[0].slice(0, 2) + words[1].slice(0, 2)).toUpperCase();
+  }
+  if (words.length === 1) {
+    return words[0].slice(0, 4).toUpperCase();
+  }
+  return `G${String(fallbackIndex).padStart(2, '0')}`;
 }
 
 // ============================================================================
-// STATE UTAMA (DEFAULT JUMAT MAKSIMAL JAM KE-6)
+// STATE UTAMA
 // ============================================================================
 const DEFAULT_STATE = {
   config: {
@@ -692,12 +738,12 @@ function renderMasterTabContent() {
   } else if (activeMasterTab === 'TEACHERS') {
     box.innerHTML = `
       <div class="flex gap-2 bg-slate-100 p-2 rounded border max-w-lg">
-        <input id="newTeacherName" placeholder="Nama Lengkap Guru" class="flex-1 border rounded px-2 py-1 bg-white">
+        <input id="newTeacherName" placeholder="Nama Lengkap Guru & Gelar" class="flex-1 border rounded px-2 py-1 bg-white">
         <input id="newTeacherCode" placeholder="Kode (G01)" class="w-28 border rounded px-2 py-1 bg-white">
         <button onclick="addMasterTeacher()" class="bg-blue-600 text-white px-3 py-1 rounded font-bold">+ Tambah Guru</button>
       </div>
       <table class="w-full border-collapse border border-slate-300">
-        <thead class="bg-slate-200"><tr><th class="border p-1.5 text-left">Nama Guru</th><th class="border p-1.5 w-28">Kode</th><th class="border p-1.5 w-20">Aksi</th></tr></thead>
+        <thead class="bg-slate-200"><tr><th class="border p-1.5 text-left">Nama Guru & Gelar</th><th class="border p-1.5 w-28">Kode</th><th class="border p-1.5 w-20">Aksi</th></tr></thead>
         <tbody>
           ${state.teachers.map(t => `
             <tr>
@@ -888,8 +934,8 @@ window.addSimpleEntity = (key) => {
 window.addMasterTeacher = () => {
   const name = document.getElementById('newTeacherName').value.trim();
   const code = document.getElementById('newTeacherCode').value.trim().toUpperCase();
-  if (!name || !code) return;
-  mutate(d => d.teachers.push({ id: 't' + Date.now(), name, code, timeOff: {} }));
+  if (!name) return;
+  mutate(d => d.teachers.push({ id: 't' + Date.now(), name, code: code || generateTeacherCode(name, d.teachers.length + 1), timeOff: {} }));
   renderMasterTabContent();
 };
 
@@ -915,19 +961,31 @@ window.deleteContract = (contractId) => {
 };
 
 // ============================================================================
-// 5. MENU UPLOAD & COPY-PASTE MATRIKS EXCEL (OTOMATIS GANTI BERSIH DATA LAMA)
+// 5. UPLOAD EXCEL (.XLSX/.XLS), CSV & COPY-PASTE TAHAN GELAR KOMA
 // ============================================================================
 window.openUploadModal = () => document.getElementById('modalUpload').classList.remove('hidden');
 window.closeUploadModal = () => document.getElementById('modalUpload').classList.add('hidden');
 
 window.downloadCsvTemplate = () => {
+  if (window.XLSX) {
+    const wsData = [
+      ['Guru', 'Kode', 'Mapel', 'X1', 'X2', 'X3', 'X4', 'XI1', 'XI2'],
+      ['Drs. Ahmad Fauzi, M.Si', 'AFZ', 'Matematika', 4, 4, 4, 0, 0, 0],
+      ['Dra. Hi. Nurhasanah, M.Pd', 'NUR', 'Bahasa Indonesia', 4, 4, 0, 0, 4, 4],
+      ['Budi Santoso, S.Pd., M.Si', 'BDS', 'Fisika', 0, 0, 0, 3, 3, 3]
+    ];
+    const wb = window.XLSX.utils.book_new();
+    const ws = window.XLSX.utils.aoa_to_sheet(wsData);
+    window.XLSX.utils.book_append_sheet(wb, ws, 'PembagianJam');
+    window.XLSX.writeFile(wb, 'template_pembagian_jam_sekolah.xlsx');
+    return;
+  }
   const csv = [
     'Guru;Kode;Mapel;X1;X2;X3;X4;XI1;XI2',
-    'Drs. Ahmad Fauzi, M.Si;AFZ;Matematika;4;4;4;0;0;0',
-    'Siti Rahmawati, S.Pd;SRW;Bahasa Indonesia;4;4;0;0;4;4',
-    'Budi Santoso, M.Pd;BDS;Fisika;0;0;0;3;3;3'
+    '"Drs. Ahmad Fauzi, M.Si";AFZ;Matematika;4;4;4;0;0;0',
+    '"Dra. Hi. Nurhasanah, M.Pd";NUR;Bahasa Indonesia;4;4;0;0;4;4'
   ].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'template_pembagian_jam_matriks.csv';
@@ -936,11 +994,33 @@ window.downloadCsvTemplate = () => {
 
 window.processUploadedFile = () => {
   const file = document.getElementById('uploadFileInput').files[0];
-  if (!file) return alert('Pilih file CSV atau JSON terlebih dahulu.');
+  if (!file) return alert('Pilih file Excel (.xlsx/.xls), CSV, atau JSON terlebih dahulu.');
+  const nameLower = file.name.toLowerCase();
+
+  // A. BACA LANGSUNG FILE EXCEL ASLI (.XLSX / .XLS) — GELAR KOMA DIJAMIN UTUH!
+  if (nameLower.endsWith('.xlsx') || nameLower.endsWith('.xls')) {
+    if (!window.XLSX) {
+      return alert('Library Excel belum termuat. Silakan muat ulang halaman (Ctrl+Shift+R) atau gunakan Copy-Paste dari Excel.');
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const data = new Uint8Array(e.target.result);
+      const workbook = window.XLSX.read(data, { type: 'array' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = window.XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' })
+        .map(r => r.map(cell => String(cell ?? '').replace(/\s+/g, ' ').trim()))
+        .filter(r => r.some(c => c !== ''));
+      importMatrixRows(rows);
+    };
+    reader.readAsArrayBuffer(file);
+    return;
+  }
+
+  // B. BACA FILE JSON ATAU CSV
   const reader = new FileReader();
   reader.onload = (e) => {
     const text = e.target.result;
-    if (file.name.endsWith('.json')) {
+    if (nameLower.endsWith('.json')) {
       try {
         const parsed = JSON.parse(text);
         if (parsed.config && parsed.cards) {
@@ -951,7 +1031,8 @@ window.processUploadedFile = () => {
         }
       } catch { alert('Format JSON tidak valid.'); }
     } else {
-      importMatrixExcel(text);
+      const rows = parseFullTableText(text);
+      importMatrixRows(rows);
     }
   };
   reader.readAsText(file);
@@ -960,22 +1041,35 @@ window.processUploadedFile = () => {
 window.processPastedExcel = () => {
   const raw = document.getElementById('pasteExcelArea').value.trim();
   if (!raw) return alert('Tempel tabel pembagian jam dari Excel terlebih dahulu.');
-  importMatrixExcel(raw);
+  const rows = parseFullTableText(raw);
+  importMatrixRows(rows);
 };
 
-function importMatrixExcel(rawText) {
-  const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  if (lines.length < 2) return alert('Minimal harus ada 1 baris judul kelas dan 1 baris data guru.');
+function importMatrixRows(rows) {
+  if (!rows || rows.length < 2) {
+    return alert('Minimal harus ada 1 baris judul kelas dan 1 baris data guru.');
+  }
 
-  // Deteksi otomatis pemisah: Tab (copy-paste Excel), Titik Koma (;), atau Koma (,)
-  const firstLine = lines[0];
-  const sep = firstLine.includes('\t') ? '\t' : firstLine.includes(';') ? ';' : ',';
-  const headers = parseDelimitedLine(firstLine, sep);
-  const classNames = headers.slice(3).filter(Boolean);
-  if (classNames.length === 0) return alert('Pastikan baris pertama memuat judul kolom: Guru | Kode | Mapel | NamaKelas1 | NamaKelas2 ...');
+  // Cari baris header (yang memuat kata Guru / Nama / Mapel)
+  let headerRowIdx = rows.findIndex(r =>
+    r.some(c => /^(guru|nama\s*guru|pengajar)$/i.test(c))
+  );
+  if (headerRowIdx === -1) headerRowIdx = 0;
+
+  const headers = rows[headerRowIdx];
+  // Auto-deteksi apakah formatnya 3 kolom awal (Guru | Kode | Mapel | Kelas...) atau 2 kolom awal (Guru | Mapel | Kelas...)
+  const col2Lower = (headers[1] || '').toLowerCase();
+  const hasExplicitCodeCol = col2Lower.includes('kode') || col2Lower.includes('inisial') || col2Lower === '';
+  const subjColIdx = hasExplicitCodeCol ? 2 : 1;
+  const classStartIdx = subjColIdx + 1;
+
+  const classNames = headers.slice(classStartIdx).filter(Boolean);
+  if (classNames.length === 0) {
+    return alert('Judul kolom kelas tidak ditemukan. Pastikan baris pertama berisi: Guru | Kode | Mapel | X1 | X2 | ...');
+  }
 
   const replaceAll = confirm(
-    `Ditemukan ${classNames.length} kelas (${classNames.slice(0, 5).join(', ')}...) dan ${lines.length - 1} baris guru.\n\n` +
+    `Terbaca ${classNames.length} kelas (${classNames.slice(0, 6).join(', ')}...) dan ${rows.length - headerRowIdx - 1} baris data.\n\n` +
     `Klik OK untuk MENGGANTI BERSIH seluruh kelas, mapel, guru & jadwal lama dengan data baru ini.\n` +
     `Klik Batal untuk menambahkan ke data yang sudah ada.`
   );
@@ -1000,27 +1094,39 @@ function importMatrixExcel(rawText) {
       return cls;
     });
 
-    for (let r = 1; r < lines.length; r++) {
-      const cols = parseDelimitedLine(lines[r], sep);
-      const tName = cols[0];
-      const tCode = cols[1];
-      const sName = cols[2];
+    for (let r = headerRowIdx + 1; r < rows.length; r++) {
+      const cols = rows[r];
+      const tName = (cols[0] || '').trim();
+      const rawCode = hasExplicitCodeCol ? (cols[1] || '').trim() : '';
+      const sName = (cols[subjColIdx] || '').trim();
+
       if (!tName || !sName) continue;
+      if (/^(jumlah|total)$/i.test(tName)) continue;
 
       let teacher = d.teachers.find(x => x.name.toLowerCase() === tName.toLowerCase());
       if (!teacher) {
-        teacher = { id: `t${Date.now()}_${r}`, name: tName, code: tCode || tName.slice(0, 4).toUpperCase(), timeOff: {} };
+        teacher = {
+          id: `t${Date.now()}_${r}`,
+          name: tName,
+          code: rawCode || generateTeacherCode(tName, d.teachers.length + 1),
+          timeOff: {}
+        };
         d.teachers.push(teacher);
       }
 
       let subject = d.subjects.find(x => x.name.toLowerCase() === sName.toLowerCase());
       if (!subject) {
-        subject = { id: `s${Date.now()}_${r}`, name: sName, code: sName.slice(0, 5).toUpperCase(), category: 'EXACT' };
+        subject = {
+          id: `s${Date.now()}_${r}`,
+          name: sName,
+          code: sName.length <= 6 ? sName.toUpperCase() : sName.slice(0, 5).toUpperCase(),
+          category: 'EXACT'
+        };
         d.subjects.push(subject);
       }
 
       classObjs.forEach((cls, cIdx) => {
-        const hours = parseInt(cols[3 + cIdx], 10) || 0;
+        const hours = parseInt(cols[classStartIdx + cIdx], 10) || 0;
         if (hours <= 0) return;
 
         const blocks = splitHoursToBlocks(hours);
@@ -1045,7 +1151,7 @@ function importMatrixExcel(rawText) {
   });
 
   closeUploadModal();
-  alert(`✅ Berhasil mengimpor!\n• ${state.classes.length} Kelas\n• ${state.subjects.length} Mata Pelajaran\n• ${state.teachers.length} Guru\n• ${cardCount} Kartu Pelajaran siap susun.`);
+  alert(`✅ Berhasil mengimpor!\n• ${state.classes.length} Kelas\n• ${state.subjects.length} Mata Pelajaran\n• ${state.teachers.length} Guru (gelar utuh)\n• ${cardCount} Kartu Pelajaran siap susun.`);
 }
 
 // ============================================================================
