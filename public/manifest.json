@@ -1,0 +1,16 @@
+{
+  "name": "Web TimeTables — Jadwal Sekolah",
+  "short_name": "Jadwal Sekolah",
+  "start_url": "./siswa.html",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#1e3a8a",
+  "description": "Aplikasi penyusun dan penampil jadwal pelajaran sekolah otomatis.",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2693/2693507.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
