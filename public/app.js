@@ -1,3 +1,16 @@
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+
+// TEMPEL KONFIGURASI FIREBASE PROYEK ANDA DI SINI:
+const FIREBASE_CONFIG = {
+  apiKey: "TEMPEL_API_KEY_ANDA",
+  authDomain: "TEMPEL_PROJECT_ID.firebaseapp.com",
+  projectId: "TEMPEL_PROJECT_ID"
+};
+
+const fbApp = initializeApp(FIREBASE_CONFIG);
+const auth = getAuth(fbApp);
+let currentUser = null;
 import { checkPlacement, computeForbiddenSlotsMap, validateFullSchedule } from './shared/validator.js';
 import { saveLocalSnapshot, loadLocalSnapshot } from './lib/storage.js';
 
@@ -813,3 +826,58 @@ window.changeZoom = (delta) => {
 };
 
 init();
+window.loginWithGoogle = async () => {
+  const errEl = document.getElementById('loginErrorMsg');
+  errEl.classList.add('hidden');
+  try {
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(auth, provider);
+  } catch (err) {
+    errEl.textContent = 'Gagal masuk dengan Google: ' + err.message;
+    errEl.classList.remove('hidden');
+  }
+};
+
+window.logoutGoogle = async () => {
+  await signOut(auth);
+  location.reload();
+};
+
+onAuthStateChanged(auth, async (user) => {
+  lucide.createIcons();
+  if (!user) {
+    document.getElementById('loginGateModal').classList.remove('hidden');
+    return;
+  }
+
+  currentUser = user;
+  document.getElementById('loginGateModal').classList.add('hidden');
+  document.getElementById('userEmailBadge').textContent = user.email;
+
+  const userSchoolId = `sch_${user.uid}`;
+  const token = await user.getIdToken();
+  const workerUrl = DEFAULT_STATE.config.workerUrl.replace(/\/$/, '');
+
+  // Cek apakah akun Gmail ini sudah punya jadwal tersimpan di Cloud
+  try {
+    const res = await fetch(`${workerUrl}/api/admin/${userSchoolId}/load`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const cloudData = await res.json();
+    if (cloudData && !cloudData.empty && cloudData.state) {
+      state = cloudData.state;
+      serverVersion = cloudData.version || 1;
+      state.config.schoolId = userSchoolId;
+      refreshDayFilter();
+      renderAll();
+      return;
+    }
+  } catch (e) {
+    console.warn('Memuat dari penyimpanan lokal:', e);
+  }
+
+  // Jika pengguna baru pertama kali login, muat dari lokal / contoh awal dengan ID unik akunnya
+  await init();
+  state.config.schoolId = userSchoolId;
+  renderAll();
+});
