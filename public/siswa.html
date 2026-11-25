@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jadwal Pelajaran Sekolah</title>
+  <link rel="manifest" href="./manifest.json" />
+  <meta name="theme-color" content="#1e3a8a" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen flex flex-col">
+
+  <!-- HEADER MOBILE-FIRST -->
+  <header class="bg-blue-900 text-white sticky top-0 z-30 shadow-md">
+    <div class="max-w-xl mx-auto px-4 py-3.5 flex items-center justify-between">
+      <div>
+        <h1 id="schoolTitle" class="font-bold text-base leading-tight">Jadwal Pelajaran</h1>
+        <p id="schoolSubtitle" class="text-xs text-blue-200">Memuat data jadwal...</p>
+      </div>
+      <button onclick="shareCurrentLink()" class="bg-blue-800 hover:bg-blue-700 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-blue-700">
+        <i data-lucide="share-2" class="w-3.5 h-3.5"></i> Bagikan
+      </button>
+    </div>
+
+    <!-- FILTER KELAS / GURU -->
+    <div class="bg-blue-950/80 border-t border-blue-800/80 px-4 py-2.5">
+      <div class="max-w-xl mx-auto flex gap-2">
+        <select id="filterType" onchange="onFilterTypeChange()" class="bg-blue-900 text-white text-xs font-semibold rounded-lg px-2.5 py-2 border border-blue-700">
+          <option value="CLASS">Kelas</option>
+          <option value="TEACHER">Guru</option>
+        </select>
+        <select id="filterValue" onchange="renderStudentSchedule()" class="flex-1 bg-white text-slate-900 text-sm font-bold rounded-lg px-3 py-2 shadow-inner">
+          <option value="">-- Pilih Kelas --</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <!-- STATUS OFFLINE / CACHE -->
+  <div id="offlineBanner" class="hidden bg-amber-500 text-slate-950 text-xs font-semibold text-center py-1 px-3">
+    Mode Offline: Menampilkan jadwal terakhir yang tersimpan di HP Anda.
+  </div>
+
+  <!-- KONTEN UTAMA (TIMELINE HARIAN) -->
+  <main class="max-w-xl mx-auto w-full px-4 py-4 flex-1 space-y-4" id="scheduleContainer">
+    <div class="text-center py-16 text-slate-400 text-sm">
+      <div class="animate-spin inline-block w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full mb-2"></div>
+      <p>Mengambil jadwal terbaru...</p>
+    </div>
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="max-w-xl mx-auto w-full px-4 py-6 text-center text-xs text-slate-400">
+    <p id="publishedInfo">Diperbarui otomatis oleh Sistem Kurikulum</p>
+  </footer>
+
+  <script>
+    // Konfigurasi Default (Bisa ditimpa lewat URL parameter ?school=...&worker=...)
+    const params = new URLSearchParams(window.location.search);
+    const SCHOOL_ID = params.get('school') || 'smpn-1-nusantara';
+    const WORKER_URL = (params.get('worker') || 'https://pembuat-jadwal.yhanedy.workers.dev').replace(/\/$/, '');
+    const CACHE_KEY = `public_schedule_cache_${SCHOOL_ID}`;
+
+    const CATEGORY_BADGES = {
+      EXACT: 'bg-blue-100 text-blue-800 border-blue-200',
+      SOCIAL: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+      LANG: 'bg-amber-100 text-amber-800 border-amber-200',
+      ART: 'bg-purple-100 text-purple-800 border-purple-200'
+    };
+
+    let scheduleData = null;
+
+    async function loadPublicSchedule() {
+      try {
+        const res = await fetch(`${WORKER_URL}/api/public/${SCHOOL_ID}`);
+        if (!res.ok) throw new Error('Belum ada jadwal yang dipublikasikan oleh admin.');
+        scheduleData = await res.json();
+
+        // Simpan ke localStorage HP siswa agar bisa dibuka tanpa kuota internet
+        localStorage.setItem(CACHE_KEY, JSON.stringify(scheduleData));
+      } catch (err) {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+          scheduleData = JSON.parse(cached);
+          document.getElementById('offlineBanner').classList.remove('hidden');
+        } else {
+          document.getElementById('scheduleContainer').innerHTML = `
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 text-center space-y-2">
+              <div class="text-3xl">📭</div>
+              <h2 class="font-bold text-base text-slate-800">Jadwal Belum Tersedia</h2>
+              <p class="text-xs text-slate-500">${err.message}</p>
+            </div>`;
+          return;
+        }
+      }
+
+      document.getElementById('schoolTitle').textContent = scheduleData.schoolName || 'Jadwal Pelajaran';
+      document.getElementById('schoolSubtitle').textContent = `Tahun Ajaran ${scheduleData.academicYear || ''}`;
+      if (scheduleData.publishedAt) {
+        const dateStr = new Date(scheduleData.publishedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        document.getElementById('publishedInfo').textContent = `Dipublikasikan pada ${dateStr}`;
+      }
+
+      onFilterTypeChange();
+    }
+
+    function onFilterTypeChange() {
+      if (!scheduleData) return;
+      const type = document.getElementById('filterType').value;
+      const select = document.getElementById('filterValue');
+      const list = type === 'CLASS' ? (scheduleData.classes || []) : (scheduleData.teachers || []);
+
+      select.innerHTML = list.map(item => `<option value="${item}">${type === 'CLASS' ? 'Kelas ' + item : item}</option>`).join('');
+
+      // Cek apakah ada parameter ?kelas=7A di URL
+      const preselected = params.get('kelas') || params.get('guru');
+      if (preselected && list.includes(preselected)) {
+        select.value = preselected;
+      }
+
+      renderStudentSchedule();
+    }
+
+    function renderStudentSchedule() {
+      if (!scheduleData) return;
+      const type = document.getElementById('filterType').value;
+      const selectedVal = document.getElementById('filterValue').value;
+      const container = document.getElementById('scheduleContainer');
+
+      // Deteksi hari ini (0 = Senin ... 5 = Sabtu)
+      const jsDay = new Date().getDay(); // 0 = Minggu, 1 = Senin
+      const todayIndex = jsDay === 0 ? -1 : jsDay - 1;
+
+      const filteredItems = (scheduleData.items || []).filter(item =>
+        type === 'CLASS' ? item.className === selectedVal : item.teacherName === selectedVal
+      );
+
+      let html = '';
+      (scheduleData.days || []).forEach((dayName, dIdx) => {
+        const isToday = dIdx === todayIndex;
+        const dayLessons = filteredItems
+          .filter(item => item.dayIndex === dIdx)
+          .sort((a, b) => a.startPeriod - b.startPeriod);
+
+        html += `
+          <div class="bg-white rounded-2xl shadow-sm border ${isToday ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-slate-200'} overflow-hidden">
+            <div class="px-4 py-2.5 ${isToday ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-800 border-b border-slate-200'} flex items-center justify-between">
+              <span class="font-bold text-sm">${dayName}</span>
+              ${isToday ? '<span class="text-[10px] font-bold uppercase bg-white text-blue-700 px-2 py-0.5 rounded-full">Hari Ini</span>' : `<span class="text-xs opacity-60">${dayLessons.length} sesi</span>`}
+            </div>
+            <div class="divide-y divide-slate-100">
+        `;
+
+        if (dayLessons.length === 0) {
+          html += `<div class="p-4 text-xs text-slate-400 text-center">Tidak ada jadwal pelajaran</div>`;
+        } else {
+          dayLessons.forEach(lesson => {
+            const endPeriod = lesson.startPeriod + lesson.duration;
+            const jamLabel = lesson.duration > 1
+              ? `Jam ${lesson.startPeriod + 1}–${endPeriod}`
+              : `Jam ke-${lesson.startPeriod + 1}`;
+            const badgeClass = CATEGORY_BADGES[lesson.category] || CATEGORY_BADGES.EXACT;
+
+            html += `
+              <div class="p-3.5 flex items-start gap-3">
+                <div class="w-20 shrink-0 pt-0.5">
+                  <span class="inline-block text-[11px] font-bold px-2 py-1 rounded-md bg-slate-100 text-slate-700 w-full text-center">
+                    ${jamLabel}
+                  </span>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-1.5 mb-0.5">
+                    <span class="text-[10px] font-bold px-1.5 py-0.2 rounded border ${badgeClass}">${lesson.subjectCode}</span>
+                    <h3 class="font-bold text-sm text-slate-900 truncate">${lesson.subjectName}</h3>
+                  </div>
+                  <p class="text-xs text-slate-600 truncate">
+                    ${type === 'CLASS' ? lesson.teacherName : 'Kelas ' + lesson.className}
+                  </p>
+                  <p class="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
+                    📍 ${lesson.roomName}
+                  </p>
+                </div>
+              </div>
+            `;
+          });
+        }
+
+        html += `</div></div>`;
+      });
+
+      container.innerHTML = html;
+      lucide.createIcons();
+    }
+
+    function shareCurrentLink() {
+      const val = document.getElementById('filterValue').value;
+      const shareUrl = `${window.location.origin}${window.location.pathname}?school=${SCHOOL_ID}&kelas=${encodeURIComponent(val)}`;
+      if (navigator.share) {
+        navigator.share({ title: `Jadwal Pelajaran ${val}`, url: shareUrl });
+      } else {
+        navigator.clipboard.writeText(shareUrl);
+        alert(`Link jadwal ${val} berhasil disalin! Siap ditempel ke grup WhatsApp:\n${shareUrl}`);
+      }
+    }
+
+    loadPublicSchedule();
+    lucide.createIcons();
+  </script>
+</body>
+</html>
