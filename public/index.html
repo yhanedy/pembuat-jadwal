@@ -179,17 +179,15 @@
       <tbody id="matrixBody"></tbody>
     </table>
   </main>
+
 <!-- WIDGET ASISTEN GEMINI AI (POJOK KANAN BAWAH) -->
 <div class="fixed bottom-4 right-4 z-50 font-sans">
-  <!-- Kotak Dialog Chat (Tersembunyi awalnya, muncul saat tombol diklik) -->
-  <div id="aiAssistantPanel" class="hidden mb-2 w-80 sm:w-96 bg-white border-2 border-blue-600 rounded-xl shadow-2xl overflow-hidden flex flex-col">
-    <!-- Header Kotak Chat -->
+  <div id="aiAssistantPanel" style="display: none;" class="mb-2 w-80 sm:w-96 bg-white border-2 border-blue-600 rounded-xl shadow-2xl overflow-hidden flex-col">
     <div class="bg-blue-700 text-white px-3.5 py-2.5 flex justify-between items-center font-bold text-xs">
-      <span class="flex items-center gap-1.5">✨ Perintahkan Gemini AI</span>
-      <button onclick="toggleAiPanel()" class="text-white hover:text-blue-200 text-sm leading-none px-1">✕</button>
+      <span class="flex items-center gap-1.5">✨ Asisten Jadwal Gemini AI</span>
+      <button type="button" onclick="toggleAiPanel()" class="text-white hover:text-blue-200 text-sm leading-none px-1">✕</button>
     </div>
 
-    <!-- Area Riwayat Percakapan -->
     <div id="aiChatLog" class="p-3 h-60 overflow-y-auto space-y-2 text-xs bg-slate-50">
       <div class="bg-blue-100 text-blue-950 p-2.5 rounded-lg leading-relaxed">
         Halo! Ketik keinginan pengaturan jadwal Anda dalam bahasa sehari-hari, contohnya:<br><br>
@@ -200,24 +198,36 @@
       </div>
     </div>
 
-    <!-- Kotak Input & Tombol Kirim -->
     <div class="p-2 border-t border-slate-200 bg-white flex gap-1.5">
       <input id="aiPromptInput" type="text" onkeydown="if(event.key==='Enter') sendAiCommand()"
         placeholder="Ketik perintah jadwal di sini..."
         class="flex-1 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-600">
-      <button id="btnSendAi" onclick="sendAiCommand()"
+      <button type="button" id="btnSendAi" onclick="sendAiCommand()"
         class="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold transition">
         Kirim
       </button>
     </div>
   </div>
 
-  <!-- Tombol Pemicu Melayang -->
-  <button onclick="toggleAiPanel()"
-    class="ml-auto flex items-center gap-1.5 bg-blue-700 hover:bg-blue-800 text-white px-4 py-2.5 rounded-full shadow-lg font-bold text-xs transition">
-    ✨ Tanya Asisten AI
+  <button type="button" onclick="toggleAiPanel()"
+    class="ml-auto flex items-center gap-1.5 bg-blue-700 hover:bg-blue-800 text-white px-4 py-2.5 rounded-full shadow-lg font-bold text-xs transition cursor-pointer">
+    ✨ Perintahkan AI membantu
   </button>
 </div>
+
+<script>
+  window.toggleAiPanel = function() {
+    var panel = document.getElementById('aiAssistantPanel');
+    if (!panel) return;
+    if (panel.style.display === 'none' || panel.style.display === '') {
+      panel.style.display = 'flex';
+      var inp = document.getElementById('aiPromptInput');
+      if (inp) inp.focus();
+    } else {
+      panel.style.display = 'none';
+    }
+  };
+</script>
   <!-- 5. DOCK KARTU BAWAH (UNPLACED CARDS STRIP KHAS aSc TIMETABLES) -->
   <section class="h-28 bg-slate-100 border-t-2 border-slate-400 flex flex-col shrink-0 no-print">
     <div class="bg-slate-200 px-3 py-1 border-b border-slate-300 flex items-center justify-between">
