@@ -15,7 +15,7 @@ const auth = getAuth(fbApp);
 let currentUser = null;
 
 // ============================================================================
-// FUNGSI VALIDASI & PENYIMPANAN LOKAL MANDIRI (ANTI GAGAL IMPORT)
+// VALIDASI & PENYIMPANAN LOKAL
 // ============================================================================
 function checkPlacement(state, card, dayIndex, startPeriod, ignoreCardId = null) {
   const k = state.contracts.find(x => x.id === card.contractId);
@@ -42,7 +42,7 @@ function checkPlacement(state, card, dayIndex, startPeriod, ignoreCardId = null)
       if (p >= other.startPeriod && p < oEnd) {
         if (ok.classId === k.classId) return { valid: false, reason: `Kelas ${cls?.name} sudah ada pelajaran` };
         if (ok.teacherId === k.teacherId) return { valid: false, reason: `${teacher?.name} sedang mengajar kelas lain` };
-        if (k.roomId && ok.roomId === k.roomId) return { valid: false, reason: 'Ruangan sedang dipakai' };
+        if (k.roomId && ok.roomId && ok.roomId === k.roomId) return { valid: false, reason: 'Ruangan sedang dipakai' };
       }
     }
   }
@@ -87,53 +87,56 @@ function loadLocalSnapshot(schoolId) {
   } catch { return null; }
 }
 
+// Pemecah total jam mingguan otomatis menjadi blok ala aSc TimeTables (misal 4 jam -> 2+2, 3 jam -> 2+1)
+function splitHoursToBlocks(totalHours) {
+  const h = parseInt(totalHours, 10) || 0;
+  if (h <= 0) return [];
+  if (h === 1) return [1];
+  if (h === 2) return [2];
+  if (h === 3) return [2, 1];
+  if (h === 4) return [2, 2];
+  if (h === 5) return [3, 2];
+  if (h === 6) return [2, 2, 2];
+  const blocks = [];
+  let rem = h;
+  while (rem > 0) {
+    if (rem >= 2) { blocks.push(2); rem -= 2; }
+    else { blocks.push(1); rem -= 1; }
+  }
+  return blocks;
+}
+
 // ============================================================================
-// DATA BAWAAN & STATE UTAMA
+// STATE UTAMA
 // ============================================================================
 const DEFAULT_STATE = {
   config: {
-    schoolId: 'smpn-1-nusantara',
-    schoolName: 'SMP Negeri 1 Nusantara',
+    schoolId: 'sman-2-karanganyar',
+    schoolName: 'SMAN 2 Karanganyar',
     academicYear: '2026/2027',
     days: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'],
-    periodsPerDay: 8,
+    periodsPerDay: 9,
     workerUrl: 'https://pembuat-jadwal.yhanedy.workers.dev'
   },
   subjects: [
     { id: 's1', name: 'Matematika', code: 'MTK', category: 'EXACT' },
-    { id: 's2', name: 'Ilmu Pengetahuan Alam', code: 'IPA', category: 'EXACT' },
-    { id: 's3', name: 'Ilmu Pengetahuan Sosial', code: 'IPS', category: 'SOCIAL' },
-    { id: 's4', name: 'Bahasa Indonesia', code: 'IND', category: 'LANG' },
-    { id: 's5', name: 'Bahasa Inggris', code: 'ING', category: 'LANG' },
-    { id: 's6', name: 'Pendidikan Jasmani', code: 'PJOK', category: 'ART' }
+    { id: 's2', name: 'Fisika', code: 'FIS', category: 'EXACT' },
+    { id: 's3', name: 'Bahasa Indonesia', code: 'IND', category: 'LANG' },
+    { id: 's4', name: 'Bahasa Inggris', code: 'ING', category: 'LANG' },
+    { id: 's5', name: 'Sejarah', code: 'SEJ', category: 'SOCIAL' },
+    { id: 's6', name: 'PJOK', code: 'PJOK', category: 'ART' }
   ],
   teachers: [
-    { id: 't1', name: 'Pak Budi Santoso', code: 'BUD', timeOff: {} },
-    { id: 't2', name: 'Bu Siti Aminah', code: 'SIT', timeOff: {} },
-    { id: 't3', name: 'Pak Andi Wijaya', code: 'AND', timeOff: {} },
-    { id: 't4', name: 'Bu Rina Marlina', code: 'RIN', timeOff: {} }
+    { id: 't1', name: 'Guru Matematika 1', code: 'G01', timeOff: {} },
+    { id: 't2', name: 'Guru B. Indonesia 1', code: 'G02', timeOff: {} }
   ],
   classes: [
-    { id: 'c1', name: '7A', timeOff: {} },
-    { id: 'c2', name: '7B', timeOff: {} },
-    { id: 'c3', name: '8A', timeOff: {} }
+    { id: 'c1', name: 'X1', timeOff: {} },
+    { id: 'c2', name: 'X2', timeOff: {} },
+    { id: 'c3', name: 'X3', timeOff: {} }
   ],
-  rooms: [
-    { id: 'r1', name: 'R.7A' },
-    { id: 'r2', name: 'R.7B' },
-    { id: 'r3', name: 'R.8A' },
-    { id: 'r4', name: 'Lab IPA' }
-  ],
-  contracts: [
-    { id: 'k1', teacherId: 't1', subjectId: 's1', classId: 'c1', roomId: 'r1', sessions: 2, duration: 2 },
-    { id: 'k2', teacherId: 't1', subjectId: 's1', classId: 'c2', roomId: 'r2', sessions: 2, duration: 2 },
-    { id: 'k3', teacherId: 't2', subjectId: 's4', classId: 'c1', roomId: 'r1', sessions: 2, duration: 2 },
-    { id: 'k4', teacherId: 't2', subjectId: 's5', classId: 'c3', roomId: 'r3', sessions: 2, duration: 2 },
-    { id: 'k5', teacherId: 't3', subjectId: 's2', classId: 'c1', roomId: 'r4', sessions: 2, duration: 2 },
-    { id: 'k6', teacherId: 't3', subjectId: 's2', classId: 'c2', roomId: 'r4', sessions: 2, duration: 2 },
-    { id: 'k7', teacherId: 't4', subjectId: 's3', classId: 'c2', roomId: 'r2', sessions: 2, duration: 1 },
-    { id: 'k8', teacherId: 't4', subjectId: 's6', classId: 'c3', roomId: 'r3', sessions: 1, duration: 2 }
-  ],
+  rooms: [],
+  contracts: [],
   cards: []
 };
 
@@ -150,11 +153,11 @@ let undoStack = [];
 let draggingCard = null;
 let forbiddenMap = new Map();
 let zoomLevel = 100;
-let activeMasterTab = 'SUBJECTS';
+let activeMasterTab = 'CONTRACTS';
 let solverWorker = null;
 
 // ============================================================================
-// 1. AUTENTIKASI GMAIL & INISIALISASI MULTI-SEKOLAH
+// 1. LOGIN GMAIL & PEMBERSIH KARTU YATIM (ANTI-UNDEFINED)
 // ============================================================================
 window.loginWithGoogle = async () => {
   const errEl = document.getElementById('loginErrorMsg');
@@ -178,6 +181,17 @@ window.logoutGoogle = async () => {
 };
 
 getRedirectResult(auth).catch(() => {});
+
+function cleanOrphanRecords(st) {
+  const validTeacherIds = new Set(st.teachers.map(t => t.id));
+  const validSubjectIds = new Set(st.subjects.map(s => s.id));
+  const validClassIds = new Set(st.classes.map(c => c.id));
+  st.contracts = st.contracts.filter(k =>
+    validTeacherIds.has(k.teacherId) && validSubjectIds.has(k.subjectId) && validClassIds.has(k.classId)
+  );
+  const validContractIds = new Set(st.contracts.map(k => k.id));
+  st.cards = st.cards.filter(c => validContractIds.has(c.contractId));
+}
 
 onAuthStateChanged(auth, async (user) => {
   if (window.lucide) window.lucide.createIcons();
@@ -203,13 +217,12 @@ onAuthStateChanged(auth, async (user) => {
       state = cloudData.state;
       serverVersion = cloudData.version || 1;
       state.config.schoolId = userSchoolId;
+      cleanOrphanRecords(state);
       refreshDayFilter();
       renderAll();
       return;
     }
-  } catch (e) {
-    console.warn('Memuat dari penyimpanan lokal:', e);
-  }
+  } catch (e) { console.warn(e); }
 
   const saved = loadLocalSnapshot(userSchoolId);
   if (saved?.state) {
@@ -218,27 +231,12 @@ onAuthStateChanged(auth, async (user) => {
   } else {
     state = JSON.parse(JSON.stringify(DEFAULT_STATE));
     state.config.schoolId = userSchoolId;
-    rebuildCardsFromContracts();
   }
 
+  cleanOrphanRecords(state);
   refreshDayFilter();
   renderAll();
 });
-
-function rebuildCardsFromContracts() {
-  state.cards = [];
-  state.contracts.forEach(k => {
-    for (let i = 0; i < (k.sessions || 1); i++) {
-      state.cards.push({
-        cardId: `${k.id}_s${i + 1}`,
-        contractId: k.id,
-        dayIndex: null,
-        startPeriod: null,
-        isLocked: false
-      });
-    }
-  });
-}
 
 function mutate(fn) {
   undoStack.push(JSON.stringify(state));
@@ -246,6 +244,7 @@ function mutate(fn) {
   document.getElementById('btnUndo').disabled = false;
 
   fn(state);
+  cleanOrphanRecords(state);
   renderAll();
   saveLocalSnapshot(state.config.schoolId, state, serverVersion);
   document.getElementById('saveStatus').textContent = '● Tersimpan';
@@ -354,11 +353,11 @@ function createCardElement(card, isConflict = false) {
       onclick="event.stopPropagation(); onCardClick(event, '${card.cardId}')"
       class="asc-card rounded border px-1.5 py-0.5 leading-tight ${style}">
       <div class="flex justify-between items-center font-bold text-[11px]">
-        <span>${subj?.code || '?'}</span>
+        <span>${subj?.code || '?'} (${k.duration}j)</span>
         <span>${card.isLocked ? '🔒' : ''}</span>
       </div>
-      <div class="text-[10px] truncate">${cls?.name} • ${teacher?.code}</div>
-      <div class="text-[9px] opacity-85 truncate">${room?.name}</div>
+      <div class="text-[10px] truncate">${cls?.name || '-'} • ${teacher?.code || '-'}</div>
+      ${room ? `<div class="text-[9px] opacity-85 truncate">${room.name}</div>` : ''}
     </div>
   `;
 }
@@ -437,7 +436,7 @@ window.onEmptyCellClick = (event, dayIndex, period, rowId) => {
 
   const pool = matching.length > 0 ? matching : unplaced;
   if (pool.length === 0) {
-    alert('Semua kartu sudah ditempatkan. Tambahkan pelajaran baru lewat menu "Pelajaran" jika diperlukan.');
+    alert('Belum ada kartu pelajaran. Klik menu "Pelajaran" untuk mengisi pembagian jam.');
     return;
   }
 
@@ -451,7 +450,7 @@ window.onEmptyCellClick = (event, dayIndex, period, rowId) => {
         const cl = state.classes.find(x => x.id === k.classId)?.name;
         const t = state.teachers.find(x => x.id === k.teacherId)?.name;
         const ok = checkPlacement(state, c, dayIndex, period).valid;
-        return `<option value="${c.cardId}">${ok ? '✅' : '⚠️'} ${s} - ${cl} (${t})</option>`;
+        return `<option value="${c.cardId}">${ok ? '✅' : '⚠️'} ${s} (${k.duration}j) - ${cl} (${t})</option>`;
       }).join('')}
     </select>
     <div class="flex justify-end gap-1.5 pt-1">
@@ -520,9 +519,9 @@ window.removeCardFromGrid = (cardId) => {
 };
 
 // ============================================================================
-// 4. MENU EDIT DATA MASTER
+// 4. MENU EDIT DATA MASTER (TERMASUK MATRIKS PEMBAGIAN JAM ALA EXCEL!)
 // ============================================================================
-window.openMasterModal = (tab = 'SUBJECTS') => {
+window.openMasterModal = (tab = 'CONTRACTS') => {
   document.getElementById('modalMaster').classList.remove('hidden');
   switchMasterTab(tab);
 };
@@ -559,14 +558,17 @@ function renderMasterTabContent() {
         </div>
         <div>
           <label class="font-bold block mb-1">Jumlah Jam Pelajaran / Hari</label>
-          <input id="mPeriods" type="number" min="4" max="12" value="${state.config.periodsPerDay}" class="w-full border rounded p-1.5">
+          <input id="mPeriods" type="number" min="4" max="14" value="${state.config.periodsPerDay}" class="w-full border rounded p-1.5">
         </div>
         <div>
           <label class="font-bold block mb-1">ID Akun Sekolah (Otomatis)</label>
           <input value="${state.config.schoolId}" readonly class="w-full border rounded p-1.5 bg-slate-100 text-slate-500">
         </div>
       </div>
-      <button onclick="saveSchoolSettings()" class="bg-blue-600 text-white px-4 py-1.5 rounded font-bold mt-2">Simpan Pengaturan Sekolah</button>
+      <div class="flex gap-2 pt-3">
+        <button onclick="saveSchoolSettings()" class="bg-blue-600 text-white px-4 py-1.5 rounded font-bold">Simpan Pengaturan</button>
+        <button onclick="resetAllContracts()" class="bg-rose-100 text-rose-700 border border-rose-300 px-3 py-1.5 rounded font-semibold hover:bg-rose-200">Kosongkan Semua Pelajaran/Kartu</button>
+      </div>
     `;
   } else if (activeMasterTab === 'SUBJECTS') {
     box.innerHTML = `
@@ -596,11 +598,11 @@ function renderMasterTabContent() {
     `;
   } else if (activeMasterTab === 'CLASSES' || activeMasterTab === 'ROOMS') {
     const key = activeMasterTab === 'CLASSES' ? 'classes' : 'rooms';
-    const label = activeMasterTab === 'CLASSES' ? 'Kelas' : 'Ruangan';
+    const label = activeMasterTab === 'CLASSES' ? 'Kelas' : 'Ruangan (Opsional)';
     box.innerHTML = `
-      <div class="flex gap-2 bg-slate-100 p-2 rounded border max-w-md">
-        <input id="newSimpleName" placeholder="Nama ${label} baru..." class="flex-1 border rounded px-2 py-1 bg-white">
-        <button onclick="addSimpleEntity('${key}')" class="bg-blue-600 text-white px-3 py-1 rounded font-bold">+ Tambah ${label}</button>
+      <div class="flex gap-2 bg-slate-100 p-2 rounded border max-w-lg">
+        <input id="newSimpleName" placeholder="Ketik nama ${label} (bisa pisah koma: X1, X2, X3)..." class="flex-1 border rounded px-2 py-1 bg-white">
+        <button onclick="addSimpleEntity('${key}')" class="bg-blue-600 text-white px-3 py-1 rounded font-bold">+ Tambah</button>
       </div>
       <table class="w-full border-collapse border border-slate-300 max-w-md">
         <thead class="bg-slate-200"><tr><th class="border p-1.5 text-left">Nama ${label}</th><th class="border p-1.5 w-20">Aksi</th></tr></thead>
@@ -617,7 +619,7 @@ function renderMasterTabContent() {
     box.innerHTML = `
       <div class="flex gap-2 bg-slate-100 p-2 rounded border max-w-lg">
         <input id="newTeacherName" placeholder="Nama Lengkap Guru" class="flex-1 border rounded px-2 py-1 bg-white">
-        <input id="newTeacherCode" placeholder="Kode (BUD)" class="w-28 border rounded px-2 py-1 bg-white">
+        <input id="newTeacherCode" placeholder="Kode (G01)" class="w-28 border rounded px-2 py-1 bg-white">
         <button onclick="addMasterTeacher()" class="bg-blue-600 text-white px-3 py-1 rounded font-bold">+ Tambah Guru</button>
       </div>
       <table class="w-full border-collapse border border-slate-300">
@@ -633,33 +635,60 @@ function renderMasterTabContent() {
       </table>
     `;
   } else if (activeMasterTab === 'CONTRACTS') {
+    // TAMPILAN MATRIKS PEMBAGIAN JAM ALA EXCEL ANDA!
     box.innerHTML = `
-      <div class="grid grid-cols-6 gap-1.5 bg-blue-50 p-2.5 rounded border border-blue-200">
-        <select id="cTeacher" class="border rounded p-1 bg-white">${state.teachers.map(t => `<option value="${t.id}">${t.name}</option>`).join('')}</select>
-        <select id="cSubject" class="border rounded p-1 bg-white">${state.subjects.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}</select>
-        <select id="cClass" class="border rounded p-1 bg-white">${state.classes.map(c => `<option value="${c.id}">Kelas ${c.name}</option>`).join('')}</select>
-        <select id="cRoom" class="border rounded p-1 bg-white">${state.rooms.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}</select>
-        <div class="flex gap-1">
-          <input id="cSessions" type="number" min="1" max="6" value="2" title="Jumlah Pertemuan/Minggu" class="w-1/2 border rounded p-1 bg-white">
-          <select id="cDuration" class="w-1/2 border rounded p-1 bg-white"><option value="1">1 Jam</option><option value="2" selected>2 Jam</option></select>
+      <div class="bg-blue-50 border border-blue-200 rounded p-3 space-y-2">
+        <div class="font-bold text-blue-900">Input Pembagian Jam Mengajar (Cukup isi total jam per minggu di masing-masing kelas):</div>
+        <div class="flex flex-wrap items-center gap-2">
+          <select id="mTeacher" class="border border-slate-300 rounded px-2 py-1.5 bg-white font-semibold">
+            ${state.teachers.map(t => `<option value="${t.id}">${t.name} (${t.code})</option>`).join('')}
+          </select>
+          <select id="mSubject" class="border border-slate-300 rounded px-2 py-1.5 bg-white font-semibold">
+            ${state.subjects.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
+          </select>
+          <button onclick="saveMatrixDistribution()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded font-bold ml-auto">
+            + Simpan Pembagian Jam
+          </button>
         </div>
-        <button onclick="addMasterContract()" class="bg-emerald-600 text-white rounded font-bold hover:bg-emerald-700">+ Buat Kartu</button>
+        <div class="overflow-x-auto pt-1">
+          <table class="border-collapse border border-slate-300 bg-white">
+            <thead>
+              <tr class="bg-slate-200">
+                ${state.classes.map(c => `<th class="border border-slate-300 px-3 py-1 text-center min-w-[56px]">${c.name}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                ${state.classes.map(c => `
+                  <td class="border border-slate-300 p-1 text-center">
+                    <input type="number" min="0" max="12" placeholder="0" data-classid="${c.id}"
+                      class="matrix-hour-input w-12 text-center border border-slate-300 rounded py-1 font-bold text-blue-700">
+                  </td>`).join('')}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-[11px] text-slate-600">*Otomatis dipecah menjadi kartu pertemuan (contoh: <b>4 jam</b> otomatis jadi <b>2+2 jam</b>, <b>3 jam</b> jadi <b>2+1 jam</b>).</p>
       </div>
+
+      <div class="flex justify-between items-center pt-2">
+        <span class="font-bold text-slate-700">Daftar Kartu Pelajaran Terdaftar (${state.cards.length} kartu):</span>
+        <button onclick="resetAllContracts()" class="text-rose-600 hover:underline font-semibold">Hapus Semua Daftar</button>
+      </div>
+
       <table class="w-full border-collapse border border-slate-300">
         <thead class="bg-slate-200">
-          <tr><th class="border p-1.5 text-left">Guru</th><th class="border p-1.5 text-left">Mapel</th><th class="border p-1.5">Kelas</th><th class="border p-1.5">Ruang</th><th class="border p-1.5">Beban</th><th class="border p-1.5">Aksi</th></tr>
+          <tr><th class="border p-1.5 text-left">Guru</th><th class="border p-1.5 text-left">Mapel</th><th class="border p-1.5">Kelas</th><th class="border p-1.5">Pecahan Jam</th><th class="border p-1.5 w-20">Aksi</th></tr>
         </thead>
         <tbody>
           ${state.contracts.map(k => {
             const t = state.teachers.find(x => x.id === k.teacherId)?.name || '-';
             const s = state.subjects.find(x => x.id === k.subjectId)?.name || '-';
             const c = state.classes.find(x => x.id === k.classId)?.name || '-';
-            const r = state.rooms.find(x => x.id === k.roomId)?.name || '-';
             return `<tr>
               <td class="border p-1.5">${t}</td>
               <td class="border p-1.5">${s}</td>
               <td class="border p-1.5 text-center font-bold">${c}</td>
-              <td class="border p-1.5 text-center">${r}</td>
               <td class="border p-1.5 text-center">${k.sessions}x (${k.duration} jam)</td>
               <td class="border p-1.5 text-center"><button onclick="deleteContract('${k.id}')" class="text-rose-600 font-bold hover:underline">Hapus</button></td>
             </tr>`;
@@ -670,11 +699,54 @@ function renderMasterTabContent() {
   }
 }
 
+window.saveMatrixDistribution = () => {
+  const teacherId = document.getElementById('mTeacher').value;
+  const subjectId = document.getElementById('mSubject').value;
+  const inputs = document.querySelectorAll('.matrix-hour-input');
+  let added = 0;
+
+  mutate(d => {
+    inputs.forEach((inp, idx) => {
+      const hours = parseInt(inp.value, 10) || 0;
+      if (hours <= 0) return;
+      const classId = inp.dataset.classid;
+      const blocks = splitHoursToBlocks(hours);
+
+      // Kelompokkan blok berdurasi sama (misal [2, 2] -> 2x2 jam; [2, 1] -> 1x2 jam & 1x1 jam)
+      const grouped = {};
+      blocks.forEach(b => { grouped[b] = (grouped[b] || 0) + 1; });
+
+      Object.entries(grouped).forEach(([durStr, sessCount], gIdx) => {
+        const duration = parseInt(durStr, 10);
+        const k = {
+          id: `k${Date.now()}_${idx}_${gIdx}`,
+          teacherId, subjectId, classId, roomId: '',
+          sessions: sessCount, duration
+        };
+        d.contracts.push(k);
+        for (let i = 0; i < sessCount; i++) {
+          d.cards.push({ cardId: `${k.id}_s${i + 1}`, contractId: k.id, dayIndex: null, startPeriod: null, isLocked: false });
+        }
+        added++;
+      });
+    });
+  });
+
+  if (added === 0) return alert('Isi minimal satu angka jam pada kolom kelas.');
+  renderMasterTabContent();
+};
+
+window.resetAllContracts = () => {
+  if (!confirm('Hapus semua daftar pelajaran dan kartu?')) return;
+  mutate(d => { d.contracts = []; d.cards = []; });
+  renderMasterTabContent();
+};
+
 window.saveSchoolSettings = () => {
   mutate(d => {
     d.config.schoolName = document.getElementById('mSchoolName').value;
     d.config.academicYear = document.getElementById('mAcademicYear').value;
-    d.config.periodsPerDay = parseInt(document.getElementById('mPeriods').value, 10) || 8;
+    d.config.periodsPerDay = parseInt(document.getElementById('mPeriods').value, 10) || 9;
   });
   alert('Pengaturan sekolah disimpan.');
 };
@@ -689,9 +761,16 @@ window.addMasterSubject = () => {
 };
 
 window.addSimpleEntity = (key) => {
-  const name = document.getElementById('newSimpleName').value.trim();
-  if (!name) return;
-  mutate(d => d[key].push({ id: key[0] + Date.now(), name, timeOff: {} }));
+  const raw = document.getElementById('newSimpleName').value.trim();
+  if (!raw) return;
+  const names = raw.split(',').map(x => x.trim()).filter(Boolean);
+  mutate(d => {
+    names.forEach((name, i) => {
+      if (!d[key].some(x => x.name.toLowerCase() === name.toLowerCase())) {
+        d[key].push({ id: key[0] + Date.now() + i, name, timeOff: {} });
+      }
+    });
+  });
   renderMasterTabContent();
 };
 
@@ -700,25 +779,6 @@ window.addMasterTeacher = () => {
   const code = document.getElementById('newTeacherCode').value.trim().toUpperCase();
   if (!name || !code) return;
   mutate(d => d.teachers.push({ id: 't' + Date.now(), name, code, timeOff: {} }));
-  renderMasterTabContent();
-};
-
-window.addMasterContract = () => {
-  const k = {
-    id: 'k' + Date.now(),
-    teacherId: document.getElementById('cTeacher').value,
-    subjectId: document.getElementById('cSubject').value,
-    classId: document.getElementById('cClass').value,
-    roomId: document.getElementById('cRoom').value,
-    sessions: parseInt(document.getElementById('cSessions').value, 10) || 1,
-    duration: parseInt(document.getElementById('cDuration').value, 10) || 1
-  };
-  mutate(d => {
-    d.contracts.push(k);
-    for (let i = 0; i < k.sessions; i++) {
-      d.cards.push({ cardId: `${k.id}_s${i + 1}`, contractId: k.id, dayIndex: null, startPeriod: null, isLocked: false });
-    }
-  });
   renderMasterTabContent();
 };
 
@@ -744,22 +804,23 @@ window.deleteContract = (contractId) => {
 };
 
 // ============================================================================
-// 5. MENU UPLOAD (IMPORT CSV / COPY-PASTE EXCEL / JSON)
+// 5. MENU UPLOAD & COPY-PASTE MATRIKS EXCEL PEMBAGIAN JAM!
 // ============================================================================
 window.openUploadModal = () => document.getElementById('modalUpload').classList.remove('hidden');
 window.closeUploadModal = () => document.getElementById('modalUpload').classList.add('hidden');
 
 window.downloadCsvTemplate = () => {
+  // Template Matriks Pembagian Jam Persis Seperti Excel Anda!
   const csv = [
-    'Guru,KodeGuru,Mapel,KodeMapel,Kelas,Ruang,Pertemuan,JamPerPertemuan',
-    'Pak Budi Santoso,BUD,Matematika,MTK,7A,R.7A,2,2',
-    'Bu Siti Aminah,SIT,Bahasa Indonesia,IND,7A,R.7A,2,2',
-    'Pak Andi Wijaya,AND,IPA Terpadu,IPA,7B,Lab IPA,2,2'
+    'Guru,Kode,Mapel,X1,X2,X3,X4,XI1,XI2',
+    'Drs. Ahmad Fauzi,AFZ,Matematika,4,4,4,0,0,0',
+    'Siti Rahmawati S.Pd,SRW,Bahasa Indonesia,4,4,0,0,4,4',
+    'Budi Santoso M.Pd,BDS,Fisika,0,0,0,3,3,3'
   ].join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'template_jadwal_sekolah.csv';
+  a.download = 'template_pembagian_jam_matriks.csv';
   a.click();
 };
 
@@ -774,16 +835,13 @@ window.processUploadedFile = () => {
         const parsed = JSON.parse(text);
         if (parsed.config && parsed.cards) {
           const keepSchoolId = state.config.schoolId;
-          mutate(() => {
-            state = parsed;
-            state.config.schoolId = keepSchoolId;
-          });
+          mutate(() => { state = parsed; state.config.schoolId = keepSchoolId; });
           closeUploadModal();
           alert('✅ File backup JSON berhasil dimuat!');
         }
       } catch { alert('Format JSON tidak valid.'); }
     } else {
-      importTabularRows(text);
+      importMatrixExcel(text);
     }
   };
   reader.readAsText(file);
@@ -791,61 +849,77 @@ window.processUploadedFile = () => {
 
 window.processPastedExcel = () => {
   const raw = document.getElementById('pasteExcelArea').value.trim();
-  if (!raw) return alert('Tempel data dari Excel terlebih dahulu.');
-  importTabularRows(raw);
+  if (!raw) return alert('Tempel tabel pembagian jam dari Excel terlebih dahulu.');
+  importMatrixExcel(raw);
 };
 
-function importTabularRows(rawText) {
+// Membaca Tabel Matriks: Kolom 1=Guru, Kolom 2=Kode, Kolom 3=Mapel, Kolom 4..N=Nama Kelas (isi angka jam)
+function importMatrixExcel(rawText) {
   const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  let importedCount = 0;
+  if (lines.length < 2) return alert('Minimal harus ada 1 baris judul kelas dan 1 baris data guru.');
+
+  const sep = lines[0].includes('\t') ? '\t' : ',';
+  const headers = lines[0].split(sep).map(h => h.trim());
+  const classNames = headers.slice(3).filter(Boolean);
+  if (classNames.length === 0) return alert('Pastikan baris pertama memuat judul kolom: Guru | Kode | Mapel | NamaKelas1 | NamaKelas2 ...');
+
+  let cardCount = 0;
 
   mutate(d => {
-    lines.forEach((line, idx) => {
-      const cols = line.includes('\t') ? line.split('\t') : line.split(',');
-      if (cols.length < 6) return;
-      if (idx === 0 && cols[0].toLowerCase().includes('guru')) return;
+    // Pastikan semua nama kelas dari header Excel terdaftar
+    const classObjs = classNames.map((cName, idx) => {
+      let cls = d.classes.find(x => x.name.toLowerCase() === cName.toLowerCase());
+      if (!cls) {
+        cls = { id: `c${Date.now()}_${idx}`, name: cName, timeOff: {} };
+        d.classes.push(cls);
+      }
+      return cls;
+    });
 
-      const [tName, tCode, sName, sCode, cName, rName, sessStr, durStr] = cols.map(x => x.trim());
-      if (!tName || !sName || !cName) return;
+    for (let r = 1; r < lines.length; r++) {
+      const cols = lines[r].split(sep).map(c => c.trim());
+      const [tName, tCode, sName] = cols;
+      if (!tName || !sName) continue;
 
       let teacher = d.teachers.find(x => x.name.toLowerCase() === tName.toLowerCase());
       if (!teacher) {
-        teacher = { id: 't' + Date.now() + idx, name: tName, code: tCode || tName.slice(0, 3).toUpperCase(), timeOff: {} };
+        teacher = { id: `t${Date.now()}_${r}`, name: tName, code: tCode || tName.slice(0, 3).toUpperCase(), timeOff: {} };
         d.teachers.push(teacher);
       }
 
       let subject = d.subjects.find(x => x.name.toLowerCase() === sName.toLowerCase());
       if (!subject) {
-        subject = { id: 's' + Date.now() + idx, name: sName, code: sCode || sName.slice(0, 3).toUpperCase(), category: 'EXACT' };
+        subject = { id: `s${Date.now()}_${r}`, name: sName, code: sName.slice(0, 4).toUpperCase(), category: 'EXACT' };
         d.subjects.push(subject);
       }
 
-      let schoolClass = d.classes.find(x => x.name.toLowerCase() === cName.toLowerCase());
-      if (!schoolClass) {
-        schoolClass = { id: 'c' + Date.now() + idx, name: cName, timeOff: {} };
-        d.classes.push(schoolClass);
-      }
+      classObjs.forEach((cls, cIdx) => {
+        const hours = parseInt(cols[3 + cIdx], 10) || 0;
+        if (hours <= 0) return;
 
-      let room = d.rooms.find(x => x.name.toLowerCase() === (rName || cName).toLowerCase());
-      if (!room) {
-        room = { id: 'r' + Date.now() + idx, name: rName || `R.${cName}` };
-        d.rooms.push(room);
-      }
+        const blocks = splitHoursToBlocks(hours);
+        const grouped = {};
+        blocks.forEach(b => { grouped[b] = (grouped[b] || 0) + 1; });
 
-      const sessions = parseInt(sessStr, 10) || 1;
-      const duration = parseInt(durStr, 10) || 1;
-      const k = { id: 'k' + Date.now() + idx, teacherId: teacher.id, subjectId: subject.id, classId: schoolClass.id, roomId: room.id, sessions, duration };
-      d.contracts.push(k);
-
-      for (let i = 0; i < sessions; i++) {
-        d.cards.push({ cardId: `${k.id}_s${i + 1}`, contractId: k.id, dayIndex: null, startPeriod: null, isLocked: false });
-      }
-      importedCount++;
-    });
+        Object.entries(grouped).forEach(([durStr, sessCount], gIdx) => {
+          const duration = parseInt(durStr, 10);
+          const k = {
+            id: `k${Date.now()}_${r}_${cIdx}_${gIdx}`,
+            teacherId: teacher.id, subjectId: subject.id, classId: cls.id, roomId: '',
+            sessions: sessCount, duration
+          };
+          d.contracts.push(k);
+          for (let i = 0; i < sessCount; i++) {
+            d.cards.push({ cardId: `${k.id}_s${i + 1}`, contractId: k.id, dayIndex: null, startPeriod: null, isLocked: false });
+            cardCount++;
+          }
+        });
+      });
+    }
   });
 
   closeUploadModal();
-  alert(`✅ Berhasil mengimpor ${importedCount} baris pelajaran ke tumpukan kartu bawah!`);
+  alert(`✅ Berhasil mengimpor pembagian jam! Terbentuk ${cardCount} kartu pelajaran siap susun.`);
 }
 
 // ============================================================================
@@ -891,7 +965,7 @@ function updateConflictRibbon() {
 window.checkAndShowConflicts = () => {
   const rep = validateFullSchedule(state);
   if (rep.conflicts.length === 0) {
-    alert('✅ Jadwal bersih! Tidak ditemukan bentrok guru, kelas, maupun ruangan.');
+    alert('✅ Jadwal bersih! Tidak ditemukan bentrok guru maupun kelas.');
   } else {
     alert('Temuan Validasi:\n\n' + rep.conflicts.map(c => `• ${c.title}: ${c.detail}`).join('\n'));
   }
