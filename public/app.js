@@ -15,14 +15,25 @@ const auth = getAuth(fbApp);
 let currentUser = null;
 
 // ============================================================================
-// VALIDASI & PENYIMPANAN LOKAL
+// VALIDASI & PENYIMPANAN LOKAL (TERMASUK BATAS JAM PER HARI SEPERTI JUMAT)
 // ============================================================================
+function getMaxPeriodForDay(state, dayIndex) {
+  const dayName = state.config.days[dayIndex];
+  if (state.config.dayMaxPeriods && state.config.dayMaxPeriods[dayName] !== undefined) {
+    return state.config.dayMaxPeriods[dayName];
+  }
+  return state.config.periodsPerDay;
+}
+
 function checkPlacement(state, card, dayIndex, startPeriod, ignoreCardId = null) {
   const k = state.contracts.find(x => x.id === card.contractId);
   if (!k) return { valid: false, reason: 'Kontrak tidak ditemukan' };
   const dur = k.duration || 1;
-  if (startPeriod + dur > state.config.periodsPerDay) {
-    return { valid: false, reason: 'Melebihi jumlah jam per hari' };
+  const maxForThisDay = getMaxPeriodForDay(state, dayIndex);
+  const dayName = state.config.days[dayIndex] || '';
+
+  if (startPeriod + dur > maxForThisDay) {
+    return { valid: false, reason: `Hari ${dayName} hanya sampai jam ke-${maxForThisDay}` };
   }
 
   const cls = state.classes.find(c => c.id === k.classId);
@@ -87,7 +98,6 @@ function loadLocalSnapshot(schoolId) {
   } catch { return null; }
 }
 
-// Pemecah total jam mingguan otomatis menjadi blok ala aSc TimeTables (misal 4 jam -> 2+2, 3 jam -> 2+1)
 function splitHoursToBlocks(totalHours) {
   const h = parseInt(totalHours, 10) || 0;
   if (h <= 0) return [];
@@ -106,8 +116,29 @@ function splitHoursToBlocks(totalHours) {
   return blocks;
 }
 
+// Parser baris CSV/TSV yang aman terhadap tanda kutip (misal "Budi Santoso, M.Si")
+function parseDelimitedLine(line, sep) {
+  if (sep === '\t') return line.split('\t').map(x => x.trim());
+  const result = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+    } else if (ch === sep && !inQuotes) {
+      result.push(cur.trim());
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  result.push(cur.trim());
+  return result;
+}
+
 // ============================================================================
-// STATE UTAMA
+// STATE UTAMA (DEFAULT JUMAT MAKSIMAL JAM KE-6)
 // ============================================================================
 const DEFAULT_STATE = {
   config: {
@@ -116,24 +147,21 @@ const DEFAULT_STATE = {
     academicYear: '2026/2027',
     days: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'],
     periodsPerDay: 9,
+    dayMaxPeriods: {
+      Senin: 9,
+      Selasa: 9,
+      Rabu: 9,
+      Kamis: 9,
+      Jumat: 6,
+      Sabtu: 8
+    },
     workerUrl: 'https://pembuat-jadwal.yhanedy.workers.dev'
   },
-  subjects: [
-    { id: 's1', name: 'Matematika', code: 'MTK', category: 'EXACT' },
-    { id: 's2', name: 'Fisika', code: 'FIS', category: 'EXACT' },
-    { id: 's3', name: 'Bahasa Indonesia', code: 'IND', category: 'LANG' },
-    { id: 's4', name: 'Bahasa Inggris', code: 'ING', category: 'LANG' },
-    { id: 's5', name: 'Sejarah', code: 'SEJ', category: 'SOCIAL' },
-    { id: 's6', name: 'PJOK', code: 'PJOK', category: 'ART' }
-  ],
-  teachers: [
-    { id: 't1', name: 'Guru Matematika 1', code: 'G01', timeOff: {} },
-    { id: 't2', name: 'Guru B. Indonesia 1', code: 'G02', timeOff: {} }
-  ],
+  subjects: [],
+  teachers: [],
   classes: [
     { id: 'c1', name: 'X1', timeOff: {} },
-    { id: 'c2', name: 'X2', timeOff: {} },
-    { id: 'c3', name: 'X3', timeOff: {} }
+    { id: 'c2', name: 'X2', timeOff: {} }
   ],
   rooms: [],
   contracts: [],
@@ -157,7 +185,7 @@ let activeMasterTab = 'CONTRACTS';
 let solverWorker = null;
 
 // ============================================================================
-// 1. LOGIN GMAIL & PEMBERSIH KARTU YATIM (ANTI-UNDEFINED)
+// 1. LOGIN GMAIL & SINKRONISASI PENGATURAN HARI
 // ============================================================================
 window.loginWithGoogle = async () => {
   const errEl = document.getElementById('loginErrorMsg');
@@ -182,7 +210,17 @@ window.logoutGoogle = async () => {
 
 getRedirectResult(auth).catch(() => {});
 
-function cleanOrphanRecords(st) {
+function normalizeStateConfig(st) {
+  if (!st.config.dayMaxPeriods) {
+    st.config.dayMaxPeriods = {
+      Senin: st.config.periodsPerDay || 9,
+      Selasa: st.config.periodsPerDay || 9,
+      Rabu: st.config.periodsPerDay || 9,
+      Kamis: st.config.periodsPerDay || 9,
+      Jumat: 6,
+      Sabtu: Math.min(8, st.config.periodsPerDay || 8)
+    };
+  }
   const validTeacherIds = new Set(st.teachers.map(t => t.id));
   const validSubjectIds = new Set(st.subjects.map(s => s.id));
   const validClassIds = new Set(st.classes.map(c => c.id));
@@ -217,7 +255,7 @@ onAuthStateChanged(auth, async (user) => {
       state = cloudData.state;
       serverVersion = cloudData.version || 1;
       state.config.schoolId = userSchoolId;
-      cleanOrphanRecords(state);
+      normalizeStateConfig(state);
       refreshDayFilter();
       renderAll();
       return;
@@ -233,7 +271,7 @@ onAuthStateChanged(auth, async (user) => {
     state.config.schoolId = userSchoolId;
   }
 
-  cleanOrphanRecords(state);
+  normalizeStateConfig(state);
   refreshDayFilter();
   renderAll();
 });
@@ -244,7 +282,7 @@ function mutate(fn) {
   document.getElementById('btnUndo').disabled = false;
 
   fn(state);
-  cleanOrphanRecords(state);
+  normalizeStateConfig(state);
   renderAll();
   saveLocalSnapshot(state.config.schoolId, state, serverVersion);
   document.getElementById('saveStatus').textContent = '● Tersimpan';
@@ -254,6 +292,7 @@ window.undoAction = () => {
   if (undoStack.length === 0) return;
   state = JSON.parse(undoStack.pop());
   document.getElementById('btnUndo').disabled = undoStack.length === 0;
+  refreshDayFilter();
   renderAll();
   saveLocalSnapshot(state.config.schoolId, state, serverVersion);
 };
@@ -266,7 +305,7 @@ function renderAll() {
 }
 
 // ============================================================================
-// 2. GRID MATRIKS KLASIK aSc TIMETABLES
+// 2. GRID MATRIKS KLASIK (OTOMATIS BLOKIR JAM > 6 PADA HARI JUMAT)
 // ============================================================================
 window.renderGrid = () => {
   const mode = document.getElementById('viewModeSelect').value;
@@ -285,9 +324,11 @@ window.renderGrid = () => {
   let h2 = `<tr>`;
 
   days.forEach(d => {
-    h1 += `<th colspan="${periods}" class="bg-slate-700 text-white border border-slate-500 py-1 text-center uppercase tracking-wider">${d.name}</th>`;
+    const maxP = getMaxPeriodForDay(state, d.index);
+    h1 += `<th colspan="${periods}" class="bg-slate-700 text-white border border-slate-500 py-1 text-center uppercase tracking-wider">${d.name} <span class="text-[10px] font-normal text-slate-300">(s.d. Jam ${maxP})</span></th>`;
     for (let p = 0; p < periods; p++) {
-      h2 += `<th class="bg-slate-200 text-slate-800 border border-slate-400 py-0.5 text-center font-bold min-w-[66px]">${p + 1}</th>`;
+      const isClosed = p >= maxP;
+      h2 += `<th class="${isClosed ? 'bg-slate-300 text-slate-500' : 'bg-slate-200 text-slate-800'} border border-slate-400 py-0.5 text-center font-bold min-w-[66px]">${p + 1}</th>`;
     }
   });
   thead.innerHTML = h1 + '</tr>' + h2 + '</tr>';
@@ -298,9 +339,11 @@ window.renderGrid = () => {
     let tr = `<tr><td class="bg-slate-100 border border-slate-400 px-2.5 py-1.5 font-bold text-slate-900 sticky left-0 z-10">${row.name}</td>`;
 
     days.forEach(d => {
+      const maxP = getMaxPeriodForDay(state, d.index);
       for (let p = 0; p < periods; p++) {
         const slotKey = `${d.index}-${p}`;
-        const isTimeOff = row.timeOff?.[slotKey];
+        const isDayClosed = p >= maxP;
+        const isTimeOff = isDayClosed || row.timeOff?.[slotKey];
 
         const cardsHere = state.cards.filter(c => {
           if (c.dayIndex !== d.index || c.startPeriod === null) return false;
@@ -322,6 +365,12 @@ window.renderGrid = () => {
           tr += `<td colspan="${k.duration}" data-day="${d.index}" data-period="${p}"
             class="border border-slate-400 p-0.5 align-middle ${!valid ? 'bg-rose-200' : 'bg-white'}">
             ${createCardElement(startCard, !valid)}
+          </td>`;
+        } else if (isDayClosed) {
+          tr += `<td data-day="${d.index}" data-period="${p}"
+            title="Hari ${d.name} hanya sampai jam ke-${maxP}"
+            class="border border-slate-300 h-12 p-0.5 asc-cell-timeoff text-[10px]">
+            Libur
           </td>`;
         } else {
           tr += `<td data-day="${d.index}" data-period="${p}" data-rowid="${row.id}"
@@ -436,7 +485,7 @@ window.onEmptyCellClick = (event, dayIndex, period, rowId) => {
 
   const pool = matching.length > 0 ? matching : unplaced;
   if (pool.length === 0) {
-    alert('Belum ada kartu pelajaran. Klik menu "Pelajaran" untuk mengisi pembagian jam.');
+    alert('Belum ada kartu pelajaran. Klik menu "Pelajaran" atau "Upload Data" untuk mengisi pembagian jam.');
     return;
   }
 
@@ -519,7 +568,7 @@ window.removeCardFromGrid = (cardId) => {
 };
 
 // ============================================================================
-// 4. MENU EDIT DATA MASTER (TERMASUK MATRIKS PEMBAGIAN JAM ALA EXCEL!)
+// 4. MENU EDIT DATA MASTER
 // ============================================================================
 window.openMasterModal = (tab = 'CONTRACTS') => {
   document.getElementById('modalMaster').classList.remove('hidden');
@@ -528,6 +577,7 @@ window.openMasterModal = (tab = 'CONTRACTS') => {
 
 window.closeMasterModal = () => {
   document.getElementById('modalMaster').classList.add('hidden');
+  refreshDayFilter();
   renderAll();
 };
 
@@ -546,8 +596,11 @@ function renderMasterTabContent() {
   const box = document.getElementById('masterModalBody');
 
   if (activeMasterTab === 'SCHOOL') {
+    const hasSabtu = state.config.days.includes('Sabtu');
+    const allPossibleDays = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
     box.innerHTML = `
-      <div class="grid grid-cols-2 gap-3 max-w-lg">
+      <div class="grid grid-cols-2 gap-3 max-w-xl">
         <div>
           <label class="font-bold block mb-1">Nama Sekolah</label>
           <input id="mSchoolName" value="${state.config.schoolName}" class="w-full border rounded p-1.5">
@@ -557,17 +610,38 @@ function renderMasterTabContent() {
           <input id="mAcademicYear" value="${state.config.academicYear}" class="w-full border rounded p-1.5">
         </div>
         <div>
-          <label class="font-bold block mb-1">Jumlah Jam Pelajaran / Hari</label>
-          <input id="mPeriods" type="number" min="4" max="14" value="${state.config.periodsPerDay}" class="w-full border rounded p-1.5">
+          <label class="font-bold block mb-1">Sistem Hari Sekolah</label>
+          <select id="mSchoolDaysCount" onchange="onChangeDaysPreset()" class="w-full border rounded p-1.5 bg-white font-semibold">
+            <option value="5" ${!hasSabtu ? 'selected' : ''}>5 Hari Kerja (Senin – Jumat)</option>
+            <option value="6" ${hasSabtu ? 'selected' : ''}>6 Hari Kerja (Senin – Sabtu)</option>
+          </select>
         </div>
         <div>
-          <label class="font-bold block mb-1">ID Akun Sekolah (Otomatis)</label>
-          <input value="${state.config.schoolId}" readonly class="w-full border rounded p-1.5 bg-slate-100 text-slate-500">
+          <label class="font-bold block mb-1">Maksimal Jam Pelajaran / Hari</label>
+          <input id="mPeriods" type="number" min="4" max="14" value="${state.config.periodsPerDay}" class="w-full border rounded p-1.5">
         </div>
       </div>
+
+      <div class="bg-slate-100 border border-slate-300 rounded p-3 max-w-xl mt-2">
+        <div class="font-bold text-slate-800 mb-2">Batas Jam Pelajaran Per Hari (Contoh: Jumat sampai jam ke-6):</div>
+        <div class="grid grid-cols-6 gap-2 text-center">
+          ${allPossibleDays.map(day => {
+            const active = state.config.days.includes(day);
+            const val = state.config.dayMaxPeriods?.[day] ?? (day === 'Jumat' ? 6 : state.config.periodsPerDay);
+            return `
+              <div class="p-2 rounded border ${active ? 'bg-white border-slate-300' : 'bg-slate-200 border-slate-300 opacity-50'}">
+                <div class="font-bold text-xs mb-1">${day}</div>
+                <input type="number" min="1" max="14" data-daymax="${day}" value="${val}" ${!active ? 'disabled' : ''}
+                  class="day-max-input w-12 text-center border rounded py-1 font-bold text-blue-700">
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+
       <div class="flex gap-2 pt-3">
-        <button onclick="saveSchoolSettings()" class="bg-blue-600 text-white px-4 py-1.5 rounded font-bold">Simpan Pengaturan</button>
-        <button onclick="resetAllContracts()" class="bg-rose-100 text-rose-700 border border-rose-300 px-3 py-1.5 rounded font-semibold hover:bg-rose-200">Kosongkan Semua Pelajaran/Kartu</button>
+        <button onclick="saveSchoolSettings()" class="bg-blue-600 text-white px-4 py-1.5 rounded font-bold">Simpan Pengaturan Sekolah</button>
+        <button onclick="resetAllSchoolData()" class="bg-rose-600 text-white px-3 py-1.5 rounded font-bold hover:bg-rose-700">Reset Total Semua Data</button>
       </div>
     `;
   } else if (activeMasterTab === 'SUBJECTS') {
@@ -635,10 +709,9 @@ function renderMasterTabContent() {
       </table>
     `;
   } else if (activeMasterTab === 'CONTRACTS') {
-    // TAMPILAN MATRIKS PEMBAGIAN JAM ALA EXCEL ANDA!
     box.innerHTML = `
       <div class="bg-blue-50 border border-blue-200 rounded p-3 space-y-2">
-        <div class="font-bold text-blue-900">Input Pembagian Jam Mengajar (Cukup isi total jam per minggu di masing-masing kelas):</div>
+        <div class="font-bold text-blue-900">Input Pembagian Jam Mengajar (Isi total jam per minggu di masing-masing kelas):</div>
         <div class="flex flex-wrap items-center gap-2">
           <select id="mTeacher" class="border border-slate-300 rounded px-2 py-1.5 bg-white font-semibold">
             ${state.teachers.map(t => `<option value="${t.id}">${t.name} (${t.code})</option>`).join('')}
@@ -699,6 +772,41 @@ function renderMasterTabContent() {
   }
 }
 
+window.onChangeDaysPreset = () => {
+  const count = document.getElementById('mSchoolDaysCount').value;
+  mutate(d => {
+    d.config.days = count === '6'
+      ? ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu']
+      : ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'];
+  });
+  refreshDayFilter();
+  renderMasterTabContent();
+};
+
+window.saveSchoolSettings = () => {
+  const daysCount = document.getElementById('mSchoolDaysCount').value;
+  const maxPeriods = parseInt(document.getElementById('mPeriods').value, 10) || 9;
+  const dayInputs = document.querySelectorAll('.day-max-input');
+
+  mutate(d => {
+    d.config.schoolName = document.getElementById('mSchoolName').value;
+    d.config.academicYear = document.getElementById('mAcademicYear').value;
+    d.config.periodsPerDay = maxPeriods;
+    d.config.days = daysCount === '6'
+      ? ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu']
+      : ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'];
+
+    if (!d.config.dayMaxPeriods) d.config.dayMaxPeriods = {};
+    dayInputs.forEach(inp => {
+      const dayName = inp.dataset.daymax;
+      d.config.dayMaxPeriods[dayName] = Math.min(maxPeriods, parseInt(inp.value, 10) || maxPeriods);
+    });
+  });
+
+  refreshDayFilter();
+  alert('✅ Pengaturan hari & batas jam per hari berhasil disimpan.');
+};
+
 window.saveMatrixDistribution = () => {
   const teacherId = document.getElementById('mTeacher').value;
   const subjectId = document.getElementById('mSubject').value;
@@ -712,7 +820,6 @@ window.saveMatrixDistribution = () => {
       const classId = inp.dataset.classid;
       const blocks = splitHoursToBlocks(hours);
 
-      // Kelompokkan blok berdurasi sama (misal [2, 2] -> 2x2 jam; [2, 1] -> 1x2 jam & 1x1 jam)
       const grouped = {};
       blocks.forEach(b => { grouped[b] = (grouped[b] || 0) + 1; });
 
@@ -742,13 +849,17 @@ window.resetAllContracts = () => {
   renderMasterTabContent();
 };
 
-window.saveSchoolSettings = () => {
+window.resetAllSchoolData = () => {
+  if (!confirm('Hapus SEMUA data Guru, Mapel, Kelas, dan Kartu agar mulai dari nol?')) return;
   mutate(d => {
-    d.config.schoolName = document.getElementById('mSchoolName').value;
-    d.config.academicYear = document.getElementById('mAcademicYear').value;
-    d.config.periodsPerDay = parseInt(document.getElementById('mPeriods').value, 10) || 9;
+    d.teachers = [];
+    d.subjects = [];
+    d.classes = [];
+    d.rooms = [];
+    d.contracts = [];
+    d.cards = [];
   });
-  alert('Pengaturan sekolah disimpan.');
+  renderMasterTabContent();
 };
 
 window.addMasterSubject = () => {
@@ -804,18 +915,17 @@ window.deleteContract = (contractId) => {
 };
 
 // ============================================================================
-// 5. MENU UPLOAD & COPY-PASTE MATRIKS EXCEL PEMBAGIAN JAM!
+// 5. MENU UPLOAD & COPY-PASTE MATRIKS EXCEL (OTOMATIS GANTI BERSIH DATA LAMA)
 // ============================================================================
 window.openUploadModal = () => document.getElementById('modalUpload').classList.remove('hidden');
 window.closeUploadModal = () => document.getElementById('modalUpload').classList.add('hidden');
 
 window.downloadCsvTemplate = () => {
-  // Template Matriks Pembagian Jam Persis Seperti Excel Anda!
   const csv = [
-    'Guru,Kode,Mapel,X1,X2,X3,X4,XI1,XI2',
-    'Drs. Ahmad Fauzi,AFZ,Matematika,4,4,4,0,0,0',
-    'Siti Rahmawati S.Pd,SRW,Bahasa Indonesia,4,4,0,0,4,4',
-    'Budi Santoso M.Pd,BDS,Fisika,0,0,0,3,3,3'
+    'Guru;Kode;Mapel;X1;X2;X3;X4;XI1;XI2',
+    'Drs. Ahmad Fauzi, M.Si;AFZ;Matematika;4;4;4;0;0;0',
+    'Siti Rahmawati, S.Pd;SRW;Bahasa Indonesia;4;4;0;0;4;4',
+    'Budi Santoso, M.Pd;BDS;Fisika;0;0;0;3;3;3'
   ].join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
   const a = document.createElement('a');
@@ -853,20 +963,34 @@ window.processPastedExcel = () => {
   importMatrixExcel(raw);
 };
 
-// Membaca Tabel Matriks: Kolom 1=Guru, Kolom 2=Kode, Kolom 3=Mapel, Kolom 4..N=Nama Kelas (isi angka jam)
 function importMatrixExcel(rawText) {
   const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   if (lines.length < 2) return alert('Minimal harus ada 1 baris judul kelas dan 1 baris data guru.');
 
-  const sep = lines[0].includes('\t') ? '\t' : ',';
-  const headers = lines[0].split(sep).map(h => h.trim());
+  // Deteksi otomatis pemisah: Tab (copy-paste Excel), Titik Koma (;), atau Koma (,)
+  const firstLine = lines[0];
+  const sep = firstLine.includes('\t') ? '\t' : firstLine.includes(';') ? ';' : ',';
+  const headers = parseDelimitedLine(firstLine, sep);
   const classNames = headers.slice(3).filter(Boolean);
   if (classNames.length === 0) return alert('Pastikan baris pertama memuat judul kolom: Guru | Kode | Mapel | NamaKelas1 | NamaKelas2 ...');
+
+  const replaceAll = confirm(
+    `Ditemukan ${classNames.length} kelas (${classNames.slice(0, 5).join(', ')}...) dan ${lines.length - 1} baris guru.\n\n` +
+    `Klik OK untuk MENGGANTI BERSIH seluruh kelas, mapel, guru & jadwal lama dengan data baru ini.\n` +
+    `Klik Batal untuk menambahkan ke data yang sudah ada.`
+  );
 
   let cardCount = 0;
 
   mutate(d => {
-    // Pastikan semua nama kelas dari header Excel terdaftar
+    if (replaceAll) {
+      d.teachers = [];
+      d.subjects = [];
+      d.classes = [];
+      d.contracts = [];
+      d.cards = [];
+    }
+
     const classObjs = classNames.map((cName, idx) => {
       let cls = d.classes.find(x => x.name.toLowerCase() === cName.toLowerCase());
       if (!cls) {
@@ -877,19 +1001,21 @@ function importMatrixExcel(rawText) {
     });
 
     for (let r = 1; r < lines.length; r++) {
-      const cols = lines[r].split(sep).map(c => c.trim());
-      const [tName, tCode, sName] = cols;
+      const cols = parseDelimitedLine(lines[r], sep);
+      const tName = cols[0];
+      const tCode = cols[1];
+      const sName = cols[2];
       if (!tName || !sName) continue;
 
       let teacher = d.teachers.find(x => x.name.toLowerCase() === tName.toLowerCase());
       if (!teacher) {
-        teacher = { id: `t${Date.now()}_${r}`, name: tName, code: tCode || tName.slice(0, 3).toUpperCase(), timeOff: {} };
+        teacher = { id: `t${Date.now()}_${r}`, name: tName, code: tCode || tName.slice(0, 4).toUpperCase(), timeOff: {} };
         d.teachers.push(teacher);
       }
 
       let subject = d.subjects.find(x => x.name.toLowerCase() === sName.toLowerCase());
       if (!subject) {
-        subject = { id: `s${Date.now()}_${r}`, name: sName, code: sName.slice(0, 4).toUpperCase(), category: 'EXACT' };
+        subject = { id: `s${Date.now()}_${r}`, name: sName, code: sName.slice(0, 5).toUpperCase(), category: 'EXACT' };
         d.subjects.push(subject);
       }
 
@@ -919,7 +1045,7 @@ function importMatrixExcel(rawText) {
   });
 
   closeUploadModal();
-  alert(`✅ Berhasil mengimpor pembagian jam! Terbentuk ${cardCount} kartu pelajaran siap susun.`);
+  alert(`✅ Berhasil mengimpor!\n• ${state.classes.length} Kelas\n• ${state.subjects.length} Mata Pelajaran\n• ${state.teachers.length} Guru\n• ${cardCount} Kartu Pelajaran siap susun.`);
 }
 
 // ============================================================================
@@ -940,6 +1066,18 @@ window.startWorkerGeneration = () => {
   document.getElementById('genFormArea').classList.add('hidden');
   document.getElementById('genProgressArea').classList.remove('hidden');
 
+  const workerState = JSON.parse(JSON.stringify(state));
+  workerState.days = workerState.config.days.map((name, idx) => ({ id: `d${idx}`, name }));
+  workerState.classes.forEach(cls => {
+    if (!cls.timeOff) cls.timeOff = {};
+    workerState.config.days.forEach((dayName, dIdx) => {
+      const maxP = getMaxPeriodForDay(workerState, dIdx);
+      for (let p = maxP; p < workerState.config.periodsPerDay; p++) {
+        cls.timeOff[`${dIdx}-${p}`] = true;
+      }
+    });
+  });
+
   solverWorker = new Worker('./solver.worker.js', { type: 'module' });
   solverWorker.onmessage = (e) => {
     if (e.data.type === 'PROGRESS') {
@@ -951,7 +1089,7 @@ window.startWorkerGeneration = () => {
       closeGeneratorModal();
     }
   };
-  solverWorker.postMessage({ type: 'START', state, options: { mode, respectLocks: true, maxIterations: 25000 } });
+  solverWorker.postMessage({ type: 'START', state: workerState, options: { mode, respectLocks: true, maxIterations: 25000 } });
 };
 
 function updateConflictRibbon() {
