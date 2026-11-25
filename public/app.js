@@ -1,29 +1,28 @@
-// ============================================================================
-// STATE & DATA DEFAULT (Dapat disimpan di LocalStorage & Cloud API)
-// ============================================================================
-const STORAGE_KEY = 'asc_web_timetable_v1';
+import { checkPlacement, computeForbiddenSlotsMap, validateFullSchedule } from './shared/validator.js';
+import { saveLocalSnapshot, loadLocalSnapshot } from './lib/storage.js';
 
-const defaultState = {
+const DEFAULT_STATE = {
   config: {
-    schoolId: 'sman2karanganyar',
-    schoolName: 'SMA N 2 Karanganyar',
+    schoolId: 'smpn-1-nusantara',
+    schoolName: 'SMP Negeri 1 Nusantara',
     academicYear: '2026/2027',
-    days: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'],
+    days: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'],
     periodsPerDay: 8,
-    workerUrl: 'pembuat-jadwal.yhanedy.workers.dev' // Isi URL Cloudflare Worker Anda di menu Pengaturan
+    workerUrl: 'https://pembuat-jadwal.yhanedy.workers.dev'
   },
   subjects: [
-    { id: 's1', name: 'Matematika', code: 'MTK' },
-    { id: 's2', name: 'Bahasa Indonesia', code: 'IND' },
-    { id: 's3', name: 'Bahasa Inggris', code: 'ING' },
-    { id: 's4', name: 'Ilmu Pengetahuan Alam', code: 'IPA' },
-    { id: 's5', name: 'Pendidikan Jasmani', code: 'PJOK' }
+    { id: 's1', name: 'Matematika', code: 'MTK', category: 'EXACT' },
+    { id: 's2', name: 'Ilmu Pengetahuan Alam', code: 'IPA', category: 'EXACT' },
+    { id: 's3', name: 'Ilmu Pengetahuan Sosial', code: 'IPS', category: 'SOCIAL' },
+    { id: 's4', name: 'Bahasa Indonesia', code: 'IND', category: 'LANG' },
+    { id: 's5', name: 'Bahasa Inggris', code: 'ING', category: 'LANG' },
+    { id: 's6', name: 'Pendidikan Jasmani', code: 'PJOK', category: 'ART' }
   ],
   teachers: [
-    { id: 't1', name: 'Budi Santoso, S.Pd', code: 'BUD', color: '#2563eb', timeOff: {} },
-    { id: 't2', name: 'Siti Aminah, M.Pd', code: 'SIT', color: '#059669', timeOff: {} },
-    { id: 't3', name: 'Andi Wijaya, S.Si', code: 'AND', color: '#d97706', timeOff: {} },
-    { id: 't4', name: 'Rina Marlina, S.Pd', code: 'RIN', color: '#7c3aed', timeOff: {} }
+    { id: 't1', name: 'Pak Budi Santoso', code: 'BUD', timeOff: {} },
+    { id: 't2', name: 'Bu Siti Aminah', code: 'SIT', timeOff: {} },
+    { id: 't3', name: 'Pak Andi Wijaya', code: 'AND', timeOff: {} },
+    { id: 't4', name: 'Bu Rina Marlina', code: 'RIN', timeOff: {} }
   ],
   classes: [
     { id: 'c1', name: '7A', timeOff: {} },
@@ -34,620 +33,783 @@ const defaultState = {
     { id: 'r1', name: 'R.7A' },
     { id: 'r2', name: 'R.7B' },
     { id: 'r3', name: 'R.8A' },
-    { id: 'r4', name: 'Lab IPA' },
-    { id: 'r5', name: 'Lapangan' }
+    { id: 'r4', name: 'Lab IPA' }
   ],
   contracts: [
     { id: 'k1', teacherId: 't1', subjectId: 's1', classId: 'c1', roomId: 'r1', sessions: 2, duration: 2 },
     { id: 'k2', teacherId: 't1', subjectId: 's1', classId: 'c2', roomId: 'r2', sessions: 2, duration: 2 },
-    { id: 'k3', teacherId: 't2', subjectId: 's2', classId: 'c1', roomId: 'r1', sessions: 2, duration: 2 },
-    { id: 'k4', teacherId: 't2', subjectId: 's2', classId: 'c3', roomId: 'r3', sessions: 2, duration: 2 },
-    { id: 'k5', teacherId: 't3', subjectId: 's4', classId: 'c1', roomId: 'r4', sessions: 2, duration: 2 },
-    { id: 'k6', teacherId: 't3', subjectId: 's4', classId: 'c2', roomId: 'r4', sessions: 2, duration: 2 },
+    { id: 'k3', teacherId: 't2', subjectId: 's4', classId: 'c1', roomId: 'r1', sessions: 2, duration: 2 },
+    { id: 'k4', teacherId: 't2', subjectId: 's5', classId: 'c3', roomId: 'r3', sessions: 2, duration: 2 },
+    { id: 'k5', teacherId: 't3', subjectId: 's2', classId: 'c1', roomId: 'r4', sessions: 2, duration: 2 },
+    { id: 'k6', teacherId: 't3', subjectId: 's2', classId: 'c2', roomId: 'r4', sessions: 2, duration: 2 },
     { id: 'k7', teacherId: 't4', subjectId: 's3', classId: 'c2', roomId: 'r2', sessions: 2, duration: 1 },
-    { id: 'k8', teacherId: 't4', subjectId: 's3', classId: 'c3', roomId: 'r3', sessions: 2, duration: 2 }
+    { id: 'k8', teacherId: 't4', subjectId: 's6', classId: 'c3', roomId: 'r3', sessions: 1, duration: 2 }
   ],
-  // Daftar kartu aktual yang dihasilkan dari contracts
-  // { cardId, contractId, dayIndex, startPeriod, isLocked }
   cards: []
 };
 
-let appState = loadState();
-let draggedCardId = null;
+const CARD_STYLES = {
+  EXACT: 'bg-blue-600 border-blue-800 text-white',
+  SOCIAL: 'bg-emerald-600 border-emerald-800 text-white',
+  LANG: 'bg-amber-400 border-amber-600 text-slate-950',
+  ART: 'bg-purple-600 border-purple-800 text-white'
+};
 
-function loadState() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved) {
-    try { return JSON.parse(saved); } catch (e) { console.error(e); }
+let state = null;
+let serverVersion = 0;
+let undoStack = [];
+let draggingCard = null;
+let forbiddenMap = new Map();
+let zoomLevel = 100;
+let activeMasterTab = 'SUBJECTS';
+let solverWorker = null;
+
+// ============================================================================
+// 1. INISIALISASI & MUTASI DATA
+// ============================================================================
+async function init() {
+  const saved = await loadLocalSnapshot(DEFAULT_STATE.config.schoolId);
+  if (saved?.state) {
+    state = saved.state;
+    serverVersion = saved.serverVersion || 0;
+  } else {
+    state = JSON.parse(JSON.stringify(DEFAULT_STATE));
+    rebuildCardsFromContracts();
   }
-  const initial = JSON.parse(JSON.stringify(defaultState));
-  initial.cards = buildCardsFromContracts(initial.contracts);
-  return initial;
+
+  refreshDayFilter();
+  renderAll();
+  lucide.createIcons();
 }
 
-function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
-}
-
-function buildCardsFromContracts(contracts) {
-  const result = [];
-  contracts.forEach(c => {
-    for (let i = 0; i < c.sessions; i++) {
-      result.push({
-        cardId: `${c.id}_s${i + 1}`,
-        contractId: c.id,
+function rebuildCardsFromContracts() {
+  state.cards = [];
+  state.contracts.forEach(k => {
+    for (let i = 0; i < (k.sessions || 1); i++) {
+      state.cards.push({
+        cardId: `${k.id}_s${i + 1}`,
+        contractId: k.id,
         dayIndex: null,
         startPeriod: null,
         isLocked: false
       });
     }
   });
-  return result;
+}
+
+function mutate(fn) {
+  undoStack.push(JSON.stringify(state));
+  if (undoStack.length > 20) undoStack.shift();
+  document.getElementById('btnUndo').disabled = false;
+
+  fn(state);
+  renderAll();
+  saveLocalSnapshot(state.config.schoolId, state, serverVersion);
+  document.getElementById('saveStatus').textContent = '● Tersimpan';
+}
+
+window.undoAction = () => {
+  if (undoStack.length === 0) return;
+  state = JSON.parse(undoStack.pop());
+  document.getElementById('btnUndo').disabled = undoStack.length === 0;
+  renderAll();
+  saveLocalSnapshot(state.config.schoolId, state, serverVersion);
+};
+
+function renderAll() {
+  document.getElementById('schoolTitleTop').textContent = state.config.schoolName;
+  renderGrid();
+  renderBottomDeck();
+  updateConflictRibbon();
 }
 
 // ============================================================================
-// NAVIGASI TAB & UI HELPERS
+// 2. GRID MATRIKS KLASIK aSc TIMETABLES
 // ============================================================================
-function switchTab(tabName) {
-  ['board', 'master', 'lessons', 'settings'].forEach(t => {
-    document.getElementById(`view-${t}`).classList.add('hidden');
-    const btn = document.getElementById(`tab-${t}`);
-    btn.classList.remove('bg-blue-600', 'text-white');
-    btn.classList.add('hover:bg-blue-800');
-  });
-  document.getElementById(`view-${tabName}`).classList.remove('hidden');
-  const activeBtn = document.getElementById(`tab-${tabName}`);
-  activeBtn.classList.add('bg-blue-600', 'text-white');
-  activeBtn.classList.remove('hover:bg-blue-800');
+window.renderGrid = () => {
+  const mode = document.getElementById('viewModeSelect').value;
+  const dayFilter = document.getElementById('dayFilterSelect').value;
+  const thead = document.getElementById('matrixHead');
+  const tbody = document.getElementById('matrixBody');
 
-  if (tabName === 'board') renderScheduleBoard();
-  if (tabName === 'master') renderMasterLists();
-  if (tabName === 'lessons') renderLessonsTab();
-  if (tabName === 'settings') renderSettingsTab();
-}
+  const days = state.config.days
+    .map((name, index) => ({ name, index }))
+    .filter(d => dayFilter === 'ALL' || String(d.index) === dayFilter);
+  const periods = state.config.periodsPerDay;
 
-function showAlert(message, type = 'info') {
-  const bar = document.getElementById('statusBar');
-  const box = document.getElementById('statusAlert');
-  bar.classList.remove('hidden');
-  const styles = {
-    success: 'bg-emerald-50 border-emerald-300 text-emerald-800',
-    error: 'bg-rose-50 border-rose-300 text-rose-800',
-    info: 'bg-blue-50 border-blue-300 text-blue-800'
-  };
-  box.className = `p-3 rounded-lg border text-sm flex items-center justify-between ${styles[type] || styles.info}`;
-  box.innerHTML = `<span>${message}</span><button onclick="document.getElementById('statusBar').classList.add('hidden')" class="font-bold ml-4">✕</button>`;
-}
-
-// ============================================================================
-// ALGORITMA GENERATOR JADWAL (CONSTRAINT SATISFACTION + BACKTRACKING)
-// ============================================================================
-function canPlaceCard(cardsList, targetCard, dayIndex, startPeriod) {
-  const contract = appState.contracts.find(c => c.id === targetCard.contractId);
-  if (!contract) return false;
-
-  const teacher = appState.teachers.find(t => t.id === contract.teacherId);
-  const schoolClass = appState.classes.find(c => c.id === contract.classId);
-
-  // Cek batas akhir jam hari tersebut
-  if (startPeriod + contract.duration > appState.config.periodsPerDay) {
-    return false;
-  }
-
-  for (let offset = 0; offset < contract.duration; offset++) {
-    const p = startPeriod + offset;
-    const slotKey = `${dayIndex}-${p}`;
-
-    // 1. Cek Time-Off Guru & Kelas
-    if (teacher?.timeOff?.[slotKey]) return false;
-    if (schoolClass?.timeOff?.[slotKey]) return false;
-
-    // 2. Cek Bentrok dengan kartu lain yang sudah terpasang
-    for (const other of cardsList) {
-      if (other.cardId === targetCard.cardId) continue;
-      if (other.dayIndex !== dayIndex || other.startPeriod === null) continue;
-
-      const otherContract = appState.contracts.find(c => c.id === other.contractId);
-      if (!otherContract) continue;
-
-      const otherEnd = other.startPeriod + otherContract.duration;
-      const isOverlap = p >= other.startPeriod && p < otherEnd;
-
-      if (isOverlap) {
-        // Bentrok Guru, Kelas, atau Ruangan
-        if (otherContract.teacherId === contract.teacherId) return false;
-        if (otherContract.classId === contract.classId) return false;
-        if (otherContract.roomId === contract.roomId) return false;
-      }
-    }
-  }
-  return true;
-}
-
-function generateTimetable() {
-  // Pertahankan kartu yang sudah di-Lock, reset sisanya
-  const workingCards = appState.cards.map(c =>
-    c.isLocked ? { ...c } : { ...c, dayIndex: null, startPeriod: null }
-  );
-
-  // Urutkan kartu yang belum terjadwal: Double lesson (durasi 2) diprioritaskan lebih dulu (Heuristik MRV)
-  const unplaced = workingCards
-    .filter(c => c.dayIndex === null)
-    .sort((a, b) => {
-      const durA = appState.contracts.find(x => x.id === a.contractId)?.duration || 1;
-      const durB = appState.contracts.find(x => x.id === b.contractId)?.duration || 1;
-      return durB - durA;
-    });
-
-  // Buat daftar semua kemungkinan slot (Hari, Jam) dan acak sedikit agar distribusi merata
-  const allSlots = [];
-  for (let d = 0; d < appState.config.days.length; d++) {
-    for (let p = 0; p < appState.config.periodsPerDay; p++) {
-      allSlots.push({ d, p });
-    }
-  }
-
-  let iterations = 0;
-  const MAX_ITERATIONS = 25000;
-
-  function backtrack(index) {
-    if (index >= unplaced.length) return true;
-    if (++iterations > MAX_ITERATIONS) return false;
-
-    const currentCard = unplaced[index];
-    // Acak urutan slot untuk menghindari penumpukan di hari Senin jam ke-1
-    const shuffledSlots = [...allSlots].sort(() => Math.random() - 0.5);
-
-    for (const slot of shuffledSlots) {
-      if (canPlaceCard(workingCards, currentCard, slot.d, slot.p)) {
-        currentCard.dayIndex = slot.d;
-        currentCard.startPeriod = slot.p;
-
-        if (backtrack(index + 1)) return true;
-
-        // Backtrack jika menemui jalan buntu
-        currentCard.dayIndex = null;
-        currentCard.startPeriod = null;
-      }
-    }
-    return false;
-  }
-
-  const success = backtrack(0);
-  appState.cards = workingCards;
-  saveState();
-  renderScheduleBoard();
-
-  const remaining = appState.cards.filter(c => c.dayIndex === null).length;
-  if (success && remaining === 0) {
-    showAlert('✅ Berhasil! Seluruh kartu pelajaran berhasil dijadwalkan tanpa bentrok.', 'success');
-  } else {
-    showAlert(`⚠️ Selesai sebagian: ${remaining} kartu belum mendapatkan slot kosong. Coba kurangi Time-Off atau klik Generate ulang.`, 'error');
-  }
-}
-
-function runTestAndVerify() {
-  const conflicts = [];
-  const placed = appState.cards.filter(c => c.dayIndex !== null);
-
-  placed.forEach(card => {
-    if (!canPlaceCard(placed, card, card.dayIndex, card.startPeriod)) {
-      const contract = appState.contracts.find(c => c.id === card.contractId);
-      const subj = appState.subjects.find(s => s.id === contract?.subjectId)?.name;
-      const cls = appState.classes.find(c => c.id === contract?.classId)?.name;
-      conflicts.push(`${subj} (${cls}) di ${appState.config.days[card.dayIndex]} Jam ke-${card.startPeriod + 1}`);
-    }
-  });
-
-  if (conflicts.length === 0) {
-    showAlert(`✅ Verifikasi Lolos! ${placed.length} kartu terpasang dan 0 bentrok ditemukan.`, 'success');
-  } else {
-    showAlert(`❌ Ditemukan ${conflicts.length} bentrok jadwal: ${conflicts.slice(0, 3).join(', ')}...`, 'error');
-  }
-}
-
-// ============================================================================
-// RENDER PAPAN JADWAL & DRAG-AND-DROP MANUAL
-// ============================================================================
-function renderScheduleBoard() {
-  const mode = document.getElementById('boardViewMode').value;
-  const thead = document.getElementById('scheduleTableHead');
-  const tbody = document.getElementById('scheduleTableBody');
-  const unplacedList = document.getElementById('unplacedCardsList');
-
-  const days = appState.config.days;
-  const periods = appState.config.periodsPerDay;
-
-  // 1. Render Kartu Belum Terjadwal
-  const unplaced = appState.cards.filter(c => c.dayIndex === null);
-  document.getElementById('unplacedCount').textContent = unplaced.length;
-  unplacedList.innerHTML = unplaced.map(card => createCardHTML(card)).join('');
-
-  // 2. Render Header Tabel (Hari & Jam ke-1..N)
-  let headRow1 = `<tr><th rowspan="2" class="p-2.5 border border-slate-700 bg-slate-900 text-left min-w-[130px] sticky left-0 z-10">${
+  let h1 = `<tr><th rowspan="2" class="bg-slate-800 text-white border border-slate-500 px-3 py-1.5 text-left min-w-[110px] sticky left-0 z-30">${
     mode === 'CLASS' ? 'Kelas' : mode === 'TEACHER' ? 'Guru' : 'Ruangan'
   }</th>`;
-  let headRow2 = `<tr>`;
+  let h2 = `<tr>`;
 
-  days.forEach(day => {
-    headRow1 += `<th colspan="${periods}" class="p-1.5 border border-slate-700 text-center font-bold uppercase tracking-wider">${day}</th>`;
-    for (let p = 1; p <= periods; p++) {
-      headRow2 += `<th class="p-1 border border-slate-700 text-center text-[11px] font-normal text-slate-300 w-14">${p}</th>`;
+  days.forEach(d => {
+    h1 += `<th colspan="${periods}" class="bg-slate-700 text-white border border-slate-500 py-1 text-center uppercase tracking-wider">${d.name}</th>`;
+    for (let p = 0; p < periods; p++) {
+      h2 += `<th class="bg-slate-200 text-slate-800 border border-slate-400 py-0.5 text-center font-bold min-w-[66px]">${p + 1}</th>`;
     }
   });
-  thead.innerHTML = headRow1 + '</tr>' + headRow2 + '</tr>';
+  thead.innerHTML = h1 + '</tr>' + h2 + '</tr>';
 
-  // 3. Tentukan Baris (Kelas / Guru / Ruangan)
-  const rows = mode === 'CLASS' ? appState.classes : mode === 'TEACHER' ? appState.teachers : appState.rooms;
+  const rows = mode === 'CLASS' ? state.classes : mode === 'TEACHER' ? state.teachers : state.rooms;
 
-  tbody.innerHTML = rows.map(rowItem => {
-    let rowHtml = `<tr class="hover:bg-slate-50">
-      <td class="p-2.5 border border-slate-200 font-bold bg-slate-50 sticky left-0 z-10">${rowItem.name}</td>`;
+  tbody.innerHTML = rows.map(row => {
+    let tr = `<tr><td class="bg-slate-100 border border-slate-400 px-2.5 py-1.5 font-bold text-slate-900 sticky left-0 z-10">${row.name}</td>`;
 
-    for (let d = 0; d < days.length; d++) {
+    days.forEach(d => {
       for (let p = 0; p < periods; p++) {
-        const slotKey = `${d}-${p}`;
-        const isTimeOff = rowItem.timeOff?.[slotKey];
+        const slotKey = `${d.index}-${p}`;
+        const isTimeOff = row.timeOff?.[slotKey];
 
-        // Cari kartu yang berada di baris ini & slot ini
-        const matchingCards = appState.cards.filter(card => {
-          if (card.dayIndex !== d || card.startPeriod === null) return false;
-          const contract = appState.contracts.find(c => c.id === card.contractId);
-          if (!contract) return false;
-
-          const isRowMatch =
-            (mode === 'CLASS' && contract.classId === rowItem.id) ||
-            (mode === 'TEACHER' && contract.teacherId === rowItem.id) ||
-            (mode === 'ROOM' && contract.roomId === rowItem.id);
-
-          return isRowMatch && p >= card.startPeriod && p < (card.startPeriod + contract.duration);
+        const cardsHere = state.cards.filter(c => {
+          if (c.dayIndex !== d.index || c.startPeriod === null) return false;
+          const k = state.contracts.find(x => x.id === c.contractId);
+          if (!k) return false;
+          const match = (mode === 'CLASS' && k.classId === row.id) ||
+                        (mode === 'TEACHER' && k.teacherId === row.id) ||
+                        (mode === 'ROOM' && k.roomId === row.id);
+          return match && p >= c.startPeriod && p < (c.startPeriod + k.duration);
         });
 
-        // Cek apakah ini awal dari kartu berdurasi ganda (colspan)
-        const startingCard = matchingCards.find(c => c.startPeriod === p);
-        const coveringCard = matchingCards.find(c => c.startPeriod < p);
+        const startCard = cardsHere.find(c => c.startPeriod === p);
+        const spanCard = cardsHere.find(c => c.startPeriod < p);
+        if (spanCard) continue;
 
-        if (coveringCard) {
-          // Lewati sel karena sudah digabung oleh colspan kartu sebelumnya
-          continue;
-        }
-
-        if (startingCard) {
-          const contract = appState.contracts.find(c => c.id === startingCard.contractId);
-          const hasConflict = !canPlaceCard(appState.cards, startingCard, d, p);
-          rowHtml += `<td colspan="${contract.duration}" 
-            ondragover="event.preventDefault()" 
-            ondrop="handleDrop(event, ${d}, ${p})"
-            class="p-1 border border-slate-200 grid-cell ${hasConflict ? 'bg-rose-200 ring-2 ring-rose-500' : ''}">
-            ${createCardHTML(startingCard, hasConflict)}
+        if (startCard) {
+          const k = state.contracts.find(x => x.id === startCard.contractId);
+          const valid = checkPlacement(state, startCard, d.index, p, startCard.cardId).valid;
+          tr += `<td colspan="${k.duration}" data-day="${d.index}" data-period="${p}"
+            class="border border-slate-400 p-0.5 align-middle ${!valid ? 'bg-rose-200' : 'bg-white'}">
+            ${createCardElement(startCard, !valid)}
           </td>`;
         } else {
-          rowHtml += `<td 
-            ondragover="event.preventDefault()" 
-            ondrop="handleDrop(event, ${d}, ${p})"
-            class="p-1 border border-slate-200 grid-cell ${isTimeOff ? 'bg-rose-50 text-rose-300 text-center' : 'hover:bg-blue-50/60'}">
-            ${isTimeOff ? '✗' : ''}
+          tr += `<td data-day="${d.index}" data-period="${p}" data-rowid="${row.id}"
+            onclick="onEmptyCellClick(event, ${d.index}, ${p}, '${row.id}')"
+            class="border border-slate-300 h-12 p-0.5 ${isTimeOff ? 'asc-cell-timeoff' : 'asc-cell-empty cursor-pointer'}">
+            ${isTimeOff ? 'X' : ''}
           </td>`;
         }
       }
-    }
-    return rowHtml + '</tr>';
+    });
+    return tr + '</tr>';
   }).join('');
+};
 
-  lucide.createIcons();
-}
+function createCardElement(card, isConflict = false) {
+  const k = state.contracts.find(x => x.id === card.contractId);
+  if (!k) return '';
+  const subj = state.subjects.find(s => s.id === k.subjectId);
+  const teacher = state.teachers.find(t => t.id === k.teacherId);
+  const cls = state.classes.find(c => c.id === k.classId);
+  const room = state.rooms.find(r => r.id === k.roomId);
 
-function createCardHTML(card, hasConflict = false) {
-  const contract = appState.contracts.find(c => c.id === card.contractId);
-  if (!contract) return '';
-  const subj = appState.subjects.find(s => s.id === contract.subjectId);
-  const teacher = appState.teachers.find(t => t.id === contract.teacherId);
-  const cls = appState.classes.find(c => c.id === contract.classId);
-  const room = appState.rooms.find(r => r.id === contract.roomId);
-
-  const bgColor = hasConflict ? '#dc2626' : (teacher?.color || '#3b82f6');
+  const style = isConflict
+    ? 'bg-rose-600 border-rose-900 text-white animate-pulse'
+    : (CARD_STYLES[subj?.category] || CARD_STYLES.EXACT);
 
   return `
-    <div draggable="true"
-      ondragstart="draggedCardId = '${card.cardId}'"
-      onclick="toggleLockCard('${card.cardId}')"
-      style="background-color: ${bgColor}"
-      title="Klik untuk Kunci/Buka Kunci • Seret untuk memindahkan"
-      class="card-item text-white rounded-md px-2 py-1 shadow-sm text-[11px] leading-tight flex flex-col justify-between min-h-[42px]">
-      <div class="flex items-center justify-between font-bold">
-        <span>${subj?.code || 'MAPEL'}</span>
+    <div draggable="true" data-cardid="${card.cardId}"
+      onclick="event.stopPropagation(); onCardClick(event, '${card.cardId}')"
+      class="asc-card rounded border px-1.5 py-0.5 leading-tight ${style}">
+      <div class="flex justify-between items-center font-bold text-[11px]">
+        <span>${subj?.code || '?'}</span>
         <span>${card.isLocked ? '🔒' : ''}</span>
       </div>
-      <div class="text-[10px] opacity-90 truncate">${cls?.name} • ${teacher?.code}</div>
-      <div class="text-[9px] opacity-75 truncate">${room?.name}</div>
+      <div class="text-[10px] truncate">${cls?.name} • ${teacher?.code}</div>
+      <div class="text-[9px] opacity-85 truncate">${room?.name}</div>
     </div>
   `;
 }
 
-function handleDrop(event, dayIndex, startPeriod) {
-  event.preventDefault();
-  if (!draggedCardId) return;
+// Drag & Drop 60 FPS
+const matrixTable = document.getElementById('matrixTable');
+document.addEventListener('dragstart', e => {
+  const el = e.target.closest('[data-cardid]');
+  if (!el) return;
+  draggingCard = state.cards.find(c => c.cardId === el.dataset.cardid);
+  if (draggingCard) forbiddenMap = computeForbiddenSlotsMap(state, draggingCard);
+});
 
-  const card = appState.cards.find(c => c.cardId === draggedCardId);
-  if (card) {
-    card.dayIndex = dayIndex;
-    card.startPeriod = startPeriod;
-    saveState();
-    renderScheduleBoard();
+matrixTable.addEventListener('dragover', e => {
+  e.preventDefault();
+  const td = e.target.closest('td[data-day]');
+  if (!td || !draggingCard) return;
+  document.querySelectorAll('.drop-valid, .drop-invalid').forEach(x => x.classList.remove('drop-valid', 'drop-invalid'));
+
+  const key = `${td.dataset.day}-${td.dataset.period}`;
+  const bar = document.getElementById('statusMessageBar');
+  if (forbiddenMap.has(key)) {
+    td.classList.add('drop-invalid');
+    bar.innerHTML = `<span class="text-rose-600">❌ Tidak bisa: ${forbiddenMap.get(key)}</span>`;
+  } else {
+    td.classList.add('drop-valid');
+    bar.innerHTML = `<span class="text-emerald-700">✅ Slot aman — lepaskan mouse untuk memasang kartu</span>`;
   }
-  draggedCardId = null;
-}
+});
 
-function toggleLockCard(cardId) {
-  const card = appState.cards.find(c => c.cardId === cardId);
-  if (card && card.dayIndex !== null) {
-    card.isLocked = !card.isLocked;
-    saveState();
-    renderScheduleBoard();
-  }
-}
+matrixTable.addEventListener('drop', e => {
+  e.preventDefault();
+  document.querySelectorAll('.drop-valid, .drop-invalid').forEach(x => x.classList.remove('drop-valid', 'drop-invalid'));
+  const td = e.target.closest('td[data-day]');
+  if (!td || !draggingCard) return;
 
-function clearUnlockedSchedule() {
-  appState.cards.forEach(c => {
-    if (!c.isLocked) {
-      c.dayIndex = null;
-      c.startPeriod = null;
-    }
+  const d = parseInt(td.dataset.day, 10);
+  const p = parseInt(td.dataset.period, 10);
+  mutate(draft => {
+    const c = draft.cards.find(x => x.cardId === draggingCard.cardId);
+    if (c) { c.dayIndex = d; c.startPeriod = p; }
   });
-  saveState();
-  renderScheduleBoard();
-  showAlert('Jadwal yang tidak terkunci telah dikosongkan.', 'info');
-}
+  draggingCard = null;
+});
 
 // ============================================================================
-// CRUD MASTER DATA & TIME-OFF GRID
+// 3. DOCK KARTU BAWAH & POPOVER KLIK KARTU / SEL KOSONG
 // ============================================================================
-function renderMasterLists() {
-  document.getElementById('listSubjects').innerHTML = appState.subjects.map(s => `
-    <li class="py-2 flex justify-between items-center">
-      <span><b>${s.code}</b> - ${s.name}</span>
-      <button onclick="deleteItem('subjects', '${s.id}')" class="text-rose-500 hover:underline text-xs">Hapus</button>
-    </li>
-  `).join('');
+window.renderBottomDeck = () => {
+  const q = document.getElementById('deckSearchInput').value.toLowerCase();
+  const unplaced = state.cards.filter(c => c.dayIndex === null);
+  document.getElementById('unplacedCount').textContent = unplaced.length;
 
-  document.getElementById('listTeachers').innerHTML = appState.teachers.map(t => `
-    <li class="py-2 flex justify-between items-center">
-      <span class="flex items-center gap-2">
-        <span class="w-3 h-3 rounded-full inline-block" style="background:${t.color}"></span>
-        <b>${t.code}</b> - ${t.name}
-      </span>
-      <div class="flex gap-2">
-        <button onclick="openTimeOff('teachers', '${t.id}')" class="text-blue-600 hover:underline text-xs">Atur Time-Off</button>
-        <button onclick="deleteItem('teachers', '${t.id}')" class="text-rose-500 hover:underline text-xs">Hapus</button>
-      </div>
-    </li>
-  `).join('');
-
-  document.getElementById('listClasses').innerHTML = appState.classes.map(c => `
-    <li class="py-2 flex justify-between items-center">
-      <span class="font-medium">Kelas ${c.name}</span>
-      <div class="flex gap-2">
-        <button onclick="openTimeOff('classes', '${c.id}')" class="text-blue-600 hover:underline text-xs">Atur Time-Off</button>
-        <button onclick="deleteItem('classes', '${c.id}')" class="text-rose-500 hover:underline text-xs">Hapus</button>
-      </div>
-    </li>
-  `).join('');
-
-  document.getElementById('listRooms').innerHTML = appState.rooms.map(r => `
-    <li class="py-2 flex justify-between items-center">
-      <span>${r.name}</span>
-      <button onclick="deleteItem('rooms', '${r.id}')" class="text-rose-500 hover:underline text-xs">Hapus</button>
-    </li>
-  `).join('');
-}
-
-function addSubject() {
-  const name = document.getElementById('inSubjName').value.trim();
-  const code = document.getElementById('inSubjCode').value.trim().toUpperCase();
-  if (!name || !code) return;
-  appState.subjects.push({ id: 's' + Date.now(), name, code });
-  document.getElementById('inSubjName').value = '';
-  document.getElementById('inSubjCode').value = '';
-  saveState(); renderMasterLists();
-}
-
-function addTeacher() {
-  const name = document.getElementById('inTeacherName').value.trim();
-  const code = document.getElementById('inTeacherCode').value.trim().toUpperCase();
-  const color = document.getElementById('inTeacherColor').value;
-  if (!name || !code) return;
-  appState.teachers.push({ id: 't' + Date.now(), name, code, color, timeOff: {} });
-  document.getElementById('inTeacherName').value = '';
-  document.getElementById('inTeacherCode').value = '';
-  saveState(); renderMasterLists();
-}
-
-function addClass() {
-  const name = document.getElementById('inClassName').value.trim();
-  if (!name) return;
-  appState.classes.push({ id: 'c' + Date.now(), name, timeOff: {} });
-  document.getElementById('inClassName').value = '';
-  saveState(); renderMasterLists();
-}
-
-function addRoom() {
-  const name = document.getElementById('inRoomName').value.trim();
-  if (!name) return;
-  appState.rooms.push({ id: 'r' + Date.now(), name });
-  document.getElementById('inRoomName').value = '';
-  saveState(); renderMasterLists();
-}
-
-function deleteItem(collection, id) {
-  appState[collection] = appState[collection].filter(item => item.id !== id);
-  saveState(); renderMasterLists();
-}
-
-function openTimeOff(collection, id) {
-  const entity = appState[collection].find(x => x.id === id);
-  if (!entity) return;
-  if (!entity.timeOff) entity.timeOff = {};
-
-  document.getElementById('timeOffPanel').classList.remove('hidden');
-  document.getElementById('timeOffTitle').textContent = `Batasan Waktu (Time-Off): ${entity.name}`;
-
-  let html = `<table class="border-collapse text-xs"><thead><tr><th class="p-2 border bg-slate-100">Hari / Jam</th>`;
-  for (let p = 0; p < appState.config.periodsPerDay; p++) {
-    html += `<th class="p-2 border bg-slate-100 w-10">Jam ${p + 1}</th>`;
-  }
-  html += `</tr></thead><tbody>`;
-
-  appState.config.days.forEach((day, dIdx) => {
-    html += `<tr><td class="p-2 border font-semibold bg-slate-50">${day}</td>`;
-    for (let p = 0; p < appState.config.periodsPerDay; p++) {
-      const key = `${dIdx}-${p}`;
-      const blocked = !!entity.timeOff[key];
-      html += `<td onclick="toggleTimeOffSlot('${collection}', '${id}', '${key}')" 
-        class="p-2 border text-center cursor-pointer font-bold ${blocked ? 'bg-rose-100 text-rose-600' : 'bg-emerald-50 text-emerald-600'}">
-        ${blocked ? '✗' : '✓'}
-      </td>`;
-    }
-    html += `</tr>`;
+  const filtered = unplaced.filter(c => {
+    const k = state.contracts.find(x => x.id === c.contractId);
+    const text = [
+      state.subjects.find(s => s.id === k?.subjectId)?.name,
+      state.teachers.find(t => t.id === k?.teacherId)?.name,
+      state.classes.find(cl => cl.id === k?.classId)?.name
+    ].join(' ').toLowerCase();
+    return text.includes(q);
   });
 
-  document.getElementById('timeOffGridContainer').innerHTML = html + '</tbody></table>';
-}
+  document.getElementById('bottomCardDeck').innerHTML = filtered.map(c =>
+    `<div class="w-28 shrink-0">${createCardElement(c)}</div>`
+  ).join('') || `<div class="text-slate-400 italic px-2">Semua kartu pelajaran sudah terpasang di grid jadwal.</div>`;
+};
 
-function toggleTimeOffSlot(collection, id, key) {
-  const entity = appState[collection].find(x => x.id === id);
-  if (entity.timeOff[key]) delete entity.timeOff[key];
-  else entity.timeOff[key] = true;
-  saveState();
-  openTimeOff(collection, id);
-}
+window.onEmptyCellClick = (event, dayIndex, period, rowId) => {
+  const mode = document.getElementById('viewModeSelect').value;
+  const unplaced = state.cards.filter(c => c.dayIndex === null);
+  const matching = unplaced.filter(c => {
+    const k = state.contracts.find(x => x.id === c.contractId);
+    if (!k) return false;
+    return mode === 'CLASS' ? k.classId === rowId : mode === 'TEACHER' ? k.teacherId === rowId : k.roomId === rowId;
+  });
 
-// ============================================================================
-// KONTRAK PELAJARAN (LESSONS)
-// ============================================================================
-function renderLessonsTab() {
-  document.getElementById('selLessonTeacher').innerHTML = appState.teachers.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
-  document.getElementById('selLessonSubject').innerHTML = appState.subjects.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-  document.getElementById('selLessonClass').innerHTML = appState.classes.map(c => `<option value="${c.id}">Kelas ${c.name}</option>`).join('');
-  document.getElementById('selLessonRoom').innerHTML = appState.rooms.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
-
-  document.getElementById('listLessons').innerHTML = appState.contracts.map(k => {
-    const t = appState.teachers.find(x => x.id === k.teacherId)?.name || '-';
-    const s = appState.subjects.find(x => x.id === k.subjectId)?.name || '-';
-    const c = appState.classes.find(x => x.id === k.classId)?.name || '-';
-    const r = appState.rooms.find(x => x.id === k.roomId)?.name || '-';
-    return `
-      <tr>
-        <td class="p-3 font-medium">${t}</td>
-        <td class="p-3">${s}</td>
-        <td class="p-3"><span class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs font-bold">${c}</span></td>
-        <td class="p-3">${r}</td>
-        <td class="p-3">${k.sessions}x / minggu</td>
-        <td class="p-3">${k.duration === 2 ? 'Double (2 Jam)' : 'Single (1 Jam)'}</td>
-        <td class="p-3 text-right">
-          <button onclick="deleteContract('${k.id}')" class="text-rose-600 hover:underline text-xs">Hapus</button>
-        </td>
-      </tr>
-    `;
-  }).join('');
-}
-
-function addLessonContract() {
-  const newContract = {
-    id: 'k' + Date.now(),
-    teacherId: document.getElementById('selLessonTeacher').value,
-    subjectId: document.getElementById('selLessonSubject').value,
-    classId: document.getElementById('selLessonClass').value,
-    roomId: document.getElementById('selLessonRoom').value,
-    sessions: parseInt(document.getElementById('inLessonSessions').value) || 1,
-    duration: parseInt(document.getElementById('selLessonDuration').value) || 1
-  };
-  appState.contracts.push(newContract);
-  // Tambahkan kartu baru ke papan
-  for (let i = 0; i < newContract.sessions; i++) {
-    appState.cards.push({
-      cardId: `${newContract.id}_s${i + 1}`,
-      contractId: newContract.id,
-      dayIndex: null,
-      startPeriod: null,
-      isLocked: false
-    });
-  }
-  saveState();
-  renderLessonsTab();
-  showAlert('Kontrak pelajaran berhasil ditambahkan.', 'success');
-}
-
-function deleteContract(contractId) {
-  appState.contracts = appState.contracts.filter(c => c.id !== contractId);
-  appState.cards = appState.cards.filter(c => c.contractId !== contractId);
-  saveState();
-  renderLessonsTab();
-}
-
-// ============================================================================
-// PENGATURAN & SINKRONISASI CLOUDFLARE WORKER / FIREBASE
-// ============================================================================
-function renderSettingsTab() {
-  document.getElementById('cfgSchoolName').value = appState.config.schoolName;
-  document.getElementById('cfgAcademicYear').value = appState.config.academicYear;
-  document.getElementById('cfgPeriodsPerDay').value = appState.config.periodsPerDay;
-  document.getElementById('cfgDays').value = appState.config.days.join(', ');
-  document.getElementById('cfgWorkerUrl').value = appState.config.workerUrl || '';
-  document.getElementById('cfgSchoolId').value = appState.config.schoolId || 'smpn-1-default';
-}
-
-function saveSchoolConfig() {
-  appState.config.schoolName = document.getElementById('cfgSchoolName').value;
-  appState.config.academicYear = document.getElementById('cfgAcademicYear').value;
-  appState.config.periodsPerDay = parseInt(document.getElementById('cfgPeriodsPerDay').value) || 8;
-  appState.config.days = document.getElementById('cfgDays').value.split(',').map(d => d.trim()).filter(Boolean);
-  appState.config.workerUrl = document.getElementById('cfgWorkerUrl').value.trim();
-  appState.config.schoolId = document.getElementById('cfgSchoolId').value.trim();
-  
-  document.getElementById('headerSchoolInfo').textContent = `${appState.config.schoolName} • Tahun Ajaran ${appState.config.academicYear}`;
-  saveState();
-  showAlert('Pengaturan sekolah berhasil disimpan.', 'success');
-}
-
-async function syncToCloudflareWorker() {
-  const url = appState.config.workerUrl;
-  if (!url) {
-    showAlert('⚠️ Masukkan URL Cloudflare Worker Anda terlebih dahulu di kolom di atas.', 'error');
+  const pool = matching.length > 0 ? matching : unplaced;
+  if (pool.length === 0) {
+    alert('Semua kartu sudah ditempatkan. Tambahkan pelajaran baru lewat menu "Pelajaran" jika diperlukan.');
     return;
   }
-  try {
-    const res = await fetch(`${url.replace(/\/$/, '')}/api/schedule/${appState.config.schoolId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(appState)
-    });
-    const data = await res.json();
-    if (res.ok) {
-      showAlert(`✅ Berhasil tersimpan ke Cloud API & Firebase! (${data.message || 'OK'})`, 'success');
-    } else {
-      showAlert(`❌ Gagal menyimpan: ${data.error || 'Terjadi kesalahan server'}`, 'error');
-    }
-  } catch (err) {
-    showAlert(`❌ Gagal terhubung ke Cloudflare Worker: ${err.message}`, 'error');
+
+  const pop = document.getElementById('slotPopover');
+  document.getElementById('popoverTitle').textContent = `${state.config.days[dayIndex]} • Jam ke-${period + 1}`;
+  document.getElementById('popoverBody').innerHTML = `
+    <select id="popCardSel" class="w-full border border-slate-300 rounded p-1.5 bg-white">
+      ${pool.map(c => {
+        const k = state.contracts.find(x => x.id === c.contractId);
+        const s = state.subjects.find(x => x.id === k.subjectId)?.name;
+        const cl = state.classes.find(x => x.id === k.classId)?.name;
+        const t = state.teachers.find(x => x.id === k.teacherId)?.name;
+        const ok = checkPlacement(state, c, dayIndex, period).valid;
+        return `<option value="${c.cardId}">${ok ? '✅' : '⚠️'} ${s} - ${cl} (${t})</option>`;
+      }).join('')}
+    </select>
+    <div class="flex justify-end gap-1.5 pt-1">
+      <button onclick="closePopover()" class="px-2.5 py-1 bg-slate-200 rounded">Batal</button>
+      <button onclick="placeFromPopover(${dayIndex}, ${period})" class="px-3 py-1 bg-blue-600 text-white font-bold rounded">Pasang</button>
+    </div>
+  `;
+  positionPopover(pop, event);
+};
+
+window.onCardClick = (event, cardId) => {
+  const card = state.cards.find(c => c.cardId === cardId);
+  if (!card || card.dayIndex === null) return;
+  const k = state.contracts.find(x => x.id === card.contractId);
+  const subj = state.subjects.find(s => s.id === k?.subjectId)?.name;
+  const teacher = state.teachers.find(t => t.id === k?.teacherId)?.name;
+  const cls = state.classes.find(c => c.id === k?.classId)?.name;
+
+  const pop = document.getElementById('slotPopover');
+  document.getElementById('popoverTitle').textContent = `${subj} (${cls})`;
+  document.getElementById('popoverBody').innerHTML = `
+    <div class="text-slate-600">Guru: <b>${teacher}</b> • Durasi: <b>${k?.duration} Jam</b></div>
+    <div class="grid grid-cols-2 gap-1.5 pt-1">
+      <button onclick="toggleLockCard('${cardId}')" class="py-1.5 px-2 rounded border font-semibold ${card.isLocked ? 'bg-amber-100 border-amber-400 text-amber-900' : 'bg-slate-100'}">
+        ${card.isLocked ? '🔓 Buka Kunci' : '🔒 Kunci Kartu'}
+      </button>
+      <button onclick="removeCardFromGrid('${cardId}')" class="py-1.5 px-2 rounded bg-rose-600 text-white font-semibold">
+        Keluarkan
+      </button>
+    </div>
+  `;
+  positionPopover(pop, event);
+};
+
+function positionPopover(pop, event) {
+  pop.style.left = `${Math.min(event.clientX + 8, window.innerWidth - 300)}px`;
+  pop.style.top = `${Math.min(event.clientY + 8, window.innerHeight - 170)}px`;
+  pop.classList.remove('hidden');
+}
+
+window.closePopover = () => document.getElementById('slotPopover').classList.add('hidden');
+
+window.placeFromPopover = (dayIndex, period) => {
+  const cardId = document.getElementById('popCardSel').value;
+  mutate(d => {
+    const c = d.cards.find(x => x.cardId === cardId);
+    if (c) { c.dayIndex = dayIndex; c.startPeriod = period; }
+  });
+  closePopover();
+};
+
+window.toggleLockCard = (cardId) => {
+  mutate(d => {
+    const c = d.cards.find(x => x.cardId === cardId);
+    if (c) c.isLocked = !c.isLocked;
+  });
+  closePopover();
+};
+
+window.removeCardFromGrid = (cardId) => {
+  mutate(d => {
+    const c = d.cards.find(x => x.cardId === cardId);
+    if (c) { c.dayIndex = null; c.startPeriod = null; c.isLocked = false; }
+  });
+  closePopover();
+};
+
+// ============================================================================
+// 4. MENU EDIT DATA MASTER (SEKOLAH, MAPEL, KELAS, RUANG, GURU, PELAJARAN)
+// ============================================================================
+window.openMasterModal = (tab = 'SUBJECTS') => {
+  document.getElementById('modalMaster').classList.remove('hidden');
+  switchMasterTab(tab);
+};
+
+window.closeMasterModal = () => {
+  document.getElementById('modalMaster').classList.add('hidden');
+  renderAll();
+};
+
+window.switchMasterTab = (tab) => {
+  activeMasterTab = tab;
+  ['SCHOOL', 'SUBJECTS', 'CLASSES', 'ROOMS', 'TEACHERS', 'CONTRACTS'].forEach(t => {
+    const btn = document.getElementById(`mtab-${t}`);
+    btn.className = t === tab
+      ? 'px-3 py-1.5 rounded-t font-bold border border-b-0 bg-white text-blue-700'
+      : 'px-3 py-1.5 rounded-t font-semibold text-slate-600 hover:bg-slate-200';
+  });
+  renderMasterTabContent();
+};
+
+function renderMasterTabContent() {
+  const box = document.getElementById('masterModalBody');
+
+  if (activeMasterTab === 'SCHOOL') {
+    box.innerHTML = `
+      <div class="grid grid-cols-2 gap-3 max-w-lg">
+        <div>
+          <label class="font-bold block mb-1">Nama Sekolah</label>
+          <input id="mSchoolName" value="${state.config.schoolName}" class="w-full border rounded p-1.5">
+        </div>
+        <div>
+          <label class="font-bold block mb-1">Tahun Ajaran</label>
+          <input id="mAcademicYear" value="${state.config.academicYear}" class="w-full border rounded p-1.5">
+        </div>
+        <div>
+          <label class="font-bold block mb-1">Jumlah Jam Pelajaran / Hari</label>
+          <input id="mPeriods" type="number" min="4" max="12" value="${state.config.periodsPerDay}" class="w-full border rounded p-1.5">
+        </div>
+        <div>
+          <label class="font-bold block mb-1">ID Sekolah (Untuk Link Siswa)</label>
+          <input id="mSchoolId" value="${state.config.schoolId}" class="w-full border rounded p-1.5">
+        </div>
+      </div>
+      <button onclick="saveSchoolSettings()" class="bg-blue-600 text-white px-4 py-1.5 rounded font-bold mt-2">Simpan Pengaturan Sekolah</button>
+    `;
+  } else if (activeMasterTab === 'SUBJECTS') {
+    box.innerHTML = `
+      <div class="flex gap-2 bg-slate-100 p-2 rounded border">
+        <input id="newSubjName" placeholder="Nama Mata Pelajaran (mis: Matematika)" class="flex-1 border rounded px-2 py-1 bg-white">
+        <input id="newSubjCode" placeholder="Singkatan (MTK)" class="w-28 border rounded px-2 py-1 bg-white">
+        <select id="newSubjCat" class="border rounded px-2 py-1 bg-white">
+          <option value="EXACT">Eksakta (Biru)</option>
+          <option value="SOCIAL">Sosial (Hijau)</option>
+          <option value="LANG">Bahasa (Kuning)</option>
+          <option value="ART">Seni/PJOK (Ungu)</option>
+        </select>
+        <button onclick="addMasterSubject()" class="bg-blue-600 text-white px-3 py-1 rounded font-bold">+ Tambah</button>
+      </div>
+      <table class="w-full border-collapse border border-slate-300">
+        <thead class="bg-slate-200"><tr><th class="border p-1.5 text-left">Nama Mapel</th><th class="border p-1.5">Kode</th><th class="border p-1.5">Kategori</th><th class="border p-1.5 w-20">Aksi</th></tr></thead>
+        <tbody>
+          ${state.subjects.map(s => `
+            <tr>
+              <td class="border p-1.5"><input value="${s.name}" onchange="editEntityName('subjects','${s.id}',this.value)" class="w-full px-1"></td>
+              <td class="border p-1.5 text-center font-bold">${s.code}</td>
+              <td class="border p-1.5 text-center">${s.category}</td>
+              <td class="border p-1.5 text-center"><button onclick="deleteEntity('subjects','${s.id}')" class="text-rose-600 font-bold hover:underline">Hapus</button></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    `;
+  } else if (activeMasterTab === 'CLASSES' || activeMasterTab === 'ROOMS') {
+    const key = activeMasterTab === 'CLASSES' ? 'classes' : 'rooms';
+    const label = activeMasterTab === 'CLASSES' ? 'Kelas' : 'Ruangan';
+    box.innerHTML = `
+      <div class="flex gap-2 bg-slate-100 p-2 rounded border max-w-md">
+        <input id="newSimpleName" placeholder="Nama ${label} baru..." class="flex-1 border rounded px-2 py-1 bg-white">
+        <button onclick="addSimpleEntity('${key}')" class="bg-blue-600 text-white px-3 py-1 rounded font-bold">+ Tambah ${label}</button>
+      </div>
+      <table class="w-full border-collapse border border-slate-300 max-w-md">
+        <thead class="bg-slate-200"><tr><th class="border p-1.5 text-left">Nama ${label}</th><th class="border p-1.5 w-20">Aksi</th></tr></thead>
+        <tbody>
+          ${state[key].map(item => `
+            <tr>
+              <td class="border p-1.5"><input value="${item.name}" onchange="editEntityName('${key}','${item.id}',this.value)" class="w-full px-1"></td>
+              <td class="border p-1.5 text-center"><button onclick="deleteEntity('${key}','${item.id}')" class="text-rose-600 font-bold hover:underline">Hapus</button></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    `;
+  } else if (activeMasterTab === 'TEACHERS') {
+    box.innerHTML = `
+      <div class="flex gap-2 bg-slate-100 p-2 rounded border max-w-lg">
+        <input id="newTeacherName" placeholder="Nama Lengkap Guru" class="flex-1 border rounded px-2 py-1 bg-white">
+        <input id="newTeacherCode" placeholder="Kode (BUD)" class="w-28 border rounded px-2 py-1 bg-white">
+        <button onclick="addMasterTeacher()" class="bg-blue-600 text-white px-3 py-1 rounded font-bold">+ Tambah Guru</button>
+      </div>
+      <table class="w-full border-collapse border border-slate-300">
+        <thead class="bg-slate-200"><tr><th class="border p-1.5 text-left">Nama Guru</th><th class="border p-1.5 w-28">Kode</th><th class="border p-1.5 w-20">Aksi</th></tr></thead>
+        <tbody>
+          ${state.teachers.map(t => `
+            <tr>
+              <td class="border p-1.5"><input value="${t.name}" onchange="editEntityName('teachers','${t.id}',this.value)" class="w-full px-1"></td>
+              <td class="border p-1.5 text-center font-bold">${t.code}</td>
+              <td class="border p-1.5 text-center"><button onclick="deleteEntity('teachers','${t.id}')" class="text-rose-600 font-bold hover:underline">Hapus</button></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    `;
+  } else if (activeMasterTab === 'CONTRACTS') {
+    box.innerHTML = `
+      <div class="grid grid-cols-6 gap-1.5 bg-blue-50 p-2.5 rounded border border-blue-200">
+        <select id="cTeacher" class="border rounded p-1 bg-white">${state.teachers.map(t => `<option value="${t.id}">${t.name}</option>`).join('')}</select>
+        <select id="cSubject" class="border rounded p-1 bg-white">${state.subjects.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}</select>
+        <select id="cClass" class="border rounded p-1 bg-white">${state.classes.map(c => `<option value="${c.id}">Kelas ${c.name}</option>`).join('')}</select>
+        <select id="cRoom" class="border rounded p-1 bg-white">${state.rooms.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}</select>
+        <div class="flex gap-1">
+          <input id="cSessions" type="number" min="1" max="6" value="2" title="Jumlah Pertemuan/Minggu" class="w-1/2 border rounded p-1 bg-white">
+          <select id="cDuration" class="w-1/2 border rounded p-1 bg-white"><option value="1">1 Jam</option><option value="2" selected>2 Jam</option></select>
+        </div>
+        <button onclick="addMasterContract()" class="bg-emerald-600 text-white rounded font-bold hover:bg-emerald-700">+ Buat Kartu</button>
+      </div>
+      <table class="w-full border-collapse border border-slate-300">
+        <thead class="bg-slate-200">
+          <tr><th class="border p-1.5 text-left">Guru</th><th class="border p-1.5 text-left">Mapel</th><th class="border p-1.5">Kelas</th><th class="border p-1.5">Ruang</th><th class="border p-1.5">Beban</th><th class="border p-1.5">Aksi</th></tr>
+        </thead>
+        <tbody>
+          ${state.contracts.map(k => {
+            const t = state.teachers.find(x => x.id === k.teacherId)?.name || '-';
+            const s = state.subjects.find(x => x.id === k.subjectId)?.name || '-';
+            const c = state.classes.find(x => x.id === k.classId)?.name || '-';
+            const r = state.rooms.find(x => x.id === k.roomId)?.name || '-';
+            return `<tr>
+              <td class="border p-1.5">${t}</td>
+              <td class="border p-1.5">${s}</td>
+              <td class="border p-1.5 text-center font-bold">${c}</td>
+              <td class="border p-1.5 text-center">${r}</td>
+              <td class="border p-1.5 text-center">${k.sessions}x (${k.duration} jam)</td>
+              <td class="border p-1.5 text-center"><button onclick="deleteContract('${k.id}')" class="text-rose-600 font-bold hover:underline">Hapus</button></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
   }
 }
 
-function exportJsonBackup() {
-  const blob = new Blob([JSON.stringify(appState, null, 2)], { type: 'application/json' });
+window.saveSchoolSettings = () => {
+  mutate(d => {
+    d.config.schoolName = document.getElementById('mSchoolName').value;
+    d.config.academicYear = document.getElementById('mAcademicYear').value;
+    d.config.periodsPerDay = parseInt(document.getElementById('mPeriods').value, 10) || 8;
+    d.config.schoolId = document.getElementById('mSchoolId').value.trim();
+  });
+  alert('Pengaturan sekolah disimpan.');
+};
+
+window.addMasterSubject = () => {
+  const name = document.getElementById('newSubjName').value.trim();
+  const code = document.getElementById('newSubjCode').value.trim().toUpperCase();
+  const category = document.getElementById('newSubjCat').value;
+  if (!name || !code) return;
+  mutate(d => d.subjects.push({ id: 's' + Date.now(), name, code, category }));
+  renderMasterTabContent();
+};
+
+window.addSimpleEntity = (key) => {
+  const name = document.getElementById('newSimpleName').value.trim();
+  if (!name) return;
+  mutate(d => d[key].push({ id: key[0] + Date.now(), name, timeOff: {} }));
+  renderMasterTabContent();
+};
+
+window.addMasterTeacher = () => {
+  const name = document.getElementById('newTeacherName').value.trim();
+  const code = document.getElementById('newTeacherCode').value.trim().toUpperCase();
+  if (!name || !code) return;
+  mutate(d => d.teachers.push({ id: 't' + Date.now(), name, code, timeOff: {} }));
+  renderMasterTabContent();
+};
+
+window.addMasterContract = () => {
+  const k = {
+    id: 'k' + Date.now(),
+    teacherId: document.getElementById('cTeacher').value,
+    subjectId: document.getElementById('cSubject').value,
+    classId: document.getElementById('cClass').value,
+    roomId: document.getElementById('cRoom').value,
+    sessions: parseInt(document.getElementById('cSessions').value, 10) || 1,
+    duration: parseInt(document.getElementById('cDuration').value, 10) || 1
+  };
+  mutate(d => {
+    d.contracts.push(k);
+    for (let i = 0; i < k.sessions; i++) {
+      d.cards.push({ cardId: `${k.id}_s${i + 1}`, contractId: k.id, dayIndex: null, startPeriod: null, isLocked: false });
+    }
+  });
+  renderMasterTabContent();
+};
+
+window.editEntityName = (key, id, newName) => {
+  mutate(d => {
+    const item = d[key].find(x => x.id === id);
+    if (item && newName.trim()) item.name = newName.trim();
+  });
+};
+
+window.deleteEntity = (key, id) => {
+  if (!confirm('Hapus data ini?')) return;
+  mutate(d => { d[key] = d[key].filter(x => x.id !== id); });
+  renderMasterTabContent();
+};
+
+window.deleteContract = (contractId) => {
+  mutate(d => {
+    d.contracts = d.contracts.filter(x => x.id !== contractId);
+    d.cards = d.cards.filter(c => c.contractId !== contractId);
+  });
+  renderMasterTabContent();
+};
+
+// ============================================================================
+// 5. MENU UPLOAD (IMPORT CSV / COPY-PASTE EXCEL / JSON)
+// ============================================================================
+window.openUploadModal = () => document.getElementById('modalUpload').classList.remove('hidden');
+window.closeUploadModal = () => document.getElementById('modalUpload').classList.add('hidden');
+
+window.downloadCsvTemplate = () => {
+  const csv = [
+    'Guru,KodeGuru,Mapel,KodeMapel,Kelas,Ruang,Pertemuan,JamPerPertemuan',
+    'Pak Budi Santoso,BUD,Matematika,MTK,7A,R.7A,2,2',
+    'Bu Siti Aminah,SIT,Bahasa Indonesia,IND,7A,R.7A,2,2',
+    'Pak Andi Wijaya,AND,IPA Terpadu,IPA,7B,Lab IPA,2,2'
+  ].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `jadwal_${appState.config.schoolId}.json`;
+  a.download = 'template_jadwal_sekolah.csv';
   a.click();
+};
+
+window.processUploadedFile = () => {
+  const file = document.getElementById('uploadFileInput').files[0];
+  if (!file) return alert('Pilih file CSV atau JSON terlebih dahulu.');
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const text = e.target.result;
+    if (file.name.endsWith('.json')) {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.config && parsed.cards) {
+          mutate(() => { state = parsed; });
+          closeUploadModal();
+          alert('✅ File backup JSON berhasil dimuat!');
+        }
+      } catch { alert('Format JSON tidak valid.'); }
+    } else {
+      importTabularRows(text);
+    }
+  };
+  reader.readAsText(file);
+};
+
+window.processPastedExcel = () => {
+  const raw = document.getElementById('pasteExcelArea').value.trim();
+  if (!raw) return alert('Tempel data dari Excel terlebih dahulu.');
+  importTabularRows(raw);
+};
+
+function importTabularRows(rawText) {
+  const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  let importedCount = 0;
+
+  mutate(d => {
+    lines.forEach((line, idx) => {
+      // Mendukung pemisah Tab (dari Copy-Paste Excel) maupun Koma (CSV)
+      const cols = line.includes('\t') ? line.split('\t') : line.split(',');
+      if (cols.length < 6) return;
+      if (idx === 0 && cols[0].toLowerCase().includes('guru')) return; // Lewati baris judul
+
+      const [tName, tCode, sName, sCode, cName, rName, sessStr, durStr] = cols.map(x => x.trim());
+      if (!tName || !sName || !cName) return;
+
+      let teacher = d.teachers.find(x => x.name.toLowerCase() === tName.toLowerCase());
+      if (!teacher) {
+        teacher = { id: 't' + Date.now() + idx, name: tName, code: tCode || tName.slice(0, 3).toUpperCase(), timeOff: {} };
+        d.teachers.push(teacher);
+      }
+
+      let subject = d.subjects.find(x => x.name.toLowerCase() === sName.toLowerCase());
+      if (!subject) {
+        subject = { id: 's' + Date.now() + idx, name: sName, code: sCode || sName.slice(0, 3).toUpperCase(), category: 'EXACT' };
+        d.subjects.push(subject);
+      }
+
+      let schoolClass = d.classes.find(x => x.name.toLowerCase() === cName.toLowerCase());
+      if (!schoolClass) {
+        schoolClass = { id: 'c' + Date.now() + idx, name: cName, timeOff: {} };
+        d.classes.push(schoolClass);
+      }
+
+      let room = d.rooms.find(x => x.name.toLowerCase() === (rName || cName).toLowerCase());
+      if (!room) {
+        room = { id: 'r' + Date.now() + idx, name: rName || `R.${cName}` };
+        d.rooms.push(room);
+      }
+
+      const sessions = parseInt(sessStr, 10) || 1;
+      const duration = parseInt(durStr, 10) || 1;
+      const k = { id: 'k' + Date.now() + idx, teacherId: teacher.id, subjectId: subject.id, classId: schoolClass.id, roomId: room.id, sessions, duration };
+      d.contracts.push(k);
+
+      for (let i = 0; i < sessions; i++) {
+        d.cards.push({ cardId: `${k.id}_s${i + 1}`, contractId: k.id, dayIndex: null, startPeriod: null, isLocked: false });
+      }
+      importedCount++;
+    });
+  });
+
+  closeUploadModal();
+  alert(`✅ Berhasil mengimpor ${importedCount} baris pelajaran ke tumpukan kartu bawah!`);
 }
 
-function resetDemoData() {
-  localStorage.removeItem(STORAGE_KEY);
-  appState = loadState();
-  saveState();
-  renderScheduleBoard();
-  showAlert('Data telah di-reset ke contoh awal.', 'info');
+// ============================================================================
+// 6. GENERATOR OTOMATIS, VALIDASI, SIMPAN CLOUD & PUBLISH
+// ============================================================================
+window.openGeneratorModal = () => {
+  document.getElementById('modalGenerator').classList.remove('hidden');
+  document.getElementById('genFormArea').classList.remove('hidden');
+  document.getElementById('genProgressArea').classList.add('hidden');
+};
+window.closeGeneratorModal = () => {
+  if (solverWorker) solverWorker.terminate();
+  document.getElementById('modalGenerator').classList.add('hidden');
+};
+
+window.startWorkerGeneration = () => {
+  const mode = document.querySelector('input[name="genMode"]:checked').value;
+  document.getElementById('genFormArea').classList.add('hidden');
+  document.getElementById('genProgressArea').classList.remove('hidden');
+
+  solverWorker = new Worker('./solver.worker.js', { type: 'module' });
+  solverWorker.onmessage = (e) => {
+    if (e.data.type === 'PROGRESS') {
+      const pct = Math.min(95, Math.round((e.data.iterations / e.data.maxIterations) * 100));
+      document.getElementById('genProgressBar').style.width = `${pct}%`;
+      document.getElementById('genProgressLabel').textContent = `Menyusun... (${e.data.placed}/${e.data.total} kartu terpasang)`;
+    } else if (e.data.type === 'DONE') {
+      mutate(d => { d.cards = e.data.cards; });
+      closeGeneratorModal();
+    }
+  };
+  solverWorker.postMessage({ type: 'START', state, options: { mode, respectLocks: true, maxIterations: 25000 } });
+};
+
+function updateConflictRibbon() {
+  const rep = validateFullSchedule(state);
+  const el = document.getElementById('ribbonConflictText');
+  el.innerHTML = rep.hardCount === 0
+    ? `<span class="text-emerald-700 font-bold">0 Bentrok</span>`
+    : `<span class="text-rose-600 font-bold">${rep.hardCount} Bentrok!</span>`;
 }
 
-// Inisialisasi awal saat halaman dibuka
-document.getElementById('headerSchoolInfo').textContent = `${appState.config.schoolName} • Tahun Ajaran ${appState.config.academicYear}`;
-renderScheduleBoard();
+window.checkAndShowConflicts = () => {
+  const rep = validateFullSchedule(state);
+  if (rep.conflicts.length === 0) {
+    alert('✅ Jadwal bersih! Tidak ditemukan bentrok guru, kelas, maupun ruangan.');
+  } else {
+    alert('Temuan Validasi:\n\n' + rep.conflicts.map(c => `• ${c.title}: ${c.detail}`).join('\n'));
+  }
+};
+
+window.saveDraftToCloud = async () => {
+  const url = state.config.workerUrl.replace(/\/$/, '');
+  document.getElementById('saveStatus').textContent = '⏳ Menyimpan...';
+  try {
+    const res = await fetch(`${url}/api/admin/${state.config.schoolId}/save-draft`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'If-Match': String(serverVersion) },
+      body: JSON.stringify(state)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Gagal menyimpan');
+    serverVersion = data.version;
+    document.getElementById('saveStatus').textContent = `● Cloud v${serverVersion}`;
+    alert('✅ Draft jadwal berhasil disimpan ke Cloud!');
+  } catch (err) {
+    alert('Gagal simpan cloud: ' + err.message);
+  }
+};
+
+window.publishToStudents = async () => {
+  const rep = validateFullSchedule(state);
+  if (!rep.isValid) {
+    alert(`Masih ada ${rep.hardCount} bentrok merah. Perbaiki dulu sebelum Publish ke siswa.`);
+    return;
+  }
+  const url = state.config.workerUrl.replace(/\/$/, '');
+  try {
+    const res = await fetch(`${url}/api/admin/${state.config.schoolId}/publish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state)
+    });
+    if (!res.ok) throw new Error('Gagal publish');
+    alert(`✅ Jadwal berhasil dipublikasikan!\n\nLink Siswa:\n${window.location.origin}/siswa.html?school=${state.config.schoolId}`);
+  } catch (err) {
+    alert('Gagal publish: ' + err.message);
+  }
+};
+
+window.exportBackupJson = () => {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `asc_jadwal_${state.config.schoolId}.json`;
+  a.click();
+};
+
+function refreshDayFilter() {
+  const sel = document.getElementById('dayFilterSelect');
+  sel.innerHTML = `<option value="ALL">Semua Hari</option>` +
+    state.config.days.map((d, i) => `<option value="${i}">${d}</option>`).join('');
+}
+
+window.changeZoom = (delta) => {
+  zoomLevel = Math.max(70, Math.min(130, zoomLevel + delta));
+  document.getElementById('zoomLabel').textContent = `${zoomLevel}%`;
+  document.getElementById('matrixTable').style.transform = `scale(${zoomLevel / 100})`;
+};
+
+init();
