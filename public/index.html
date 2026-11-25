@@ -50,11 +50,33 @@
   </style>
 </head>
 <body class="bg-slate-200 text-slate-800 h-screen flex flex-col overflow-hidden text-xs">
-
+<!-- GERBANG LOGIN GMAIL (MULTI-SEKOLAH OTOMATIS) -->
+  <div id="loginGateModal" class="fixed inset-0 z-50 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+    <div class="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 text-center space-y-4 border border-slate-300">
+      <div class="w-12 h-12 bg-blue-600 text-white rounded-xl flex items-center justify-center mx-auto shadow">
+        <i data-lucide="calendar-range" class="w-6 h-6"></i>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold text-slate-900">aSc Web TimeTables</h1>
+        <p class="text-xs text-slate-500 mt-1">Masuk menggunakan akun Gmail Anda. Data jadwal setiap guru dan sekolah tersimpan terpisah secara otomatis.</p>
+      </div>
+      <button onclick="loginWithGoogle()" class="w-full py-2.5 px-4 bg-white hover:bg-slate-50 text-slate-800 font-bold rounded-lg border-2 border-slate-300 flex items-center justify-center gap-2.5 shadow-sm transition">
+        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" class="w-5 h-5" alt="Google">
+        <span>Masuk dengan Akun Gmail</span>
+      </button>
+      <p id="loginErrorMsg" class="text-xs text-rose-600 hidden"></p>
+    </div>
+  </div>
   <!-- ===================================================================== -->
   <!-- 1. TOP MENU BAR ALA DESKTOP WINDOWS / aSc TIMETABLES                  -->
   <!-- ===================================================================== -->
   <div class="bg-slate-800 text-slate-200 px-3 py-1 flex items-center justify-between text-[11px] shrink-0 no-print">
+    <div class="flex items-center gap-3">
+      <span id="schoolTitleTop" class="font-semibold text-white">SMP Negeri 1 Nusantara</span>
+      <span id="userEmailBadge" class="text-amber-300 font-medium hidden sm:inline"></span>
+      <span id="saveStatus" class="px-2 py-0.5 rounded bg-emerald-900/80 text-emerald-300 border border-emerald-700">● Tersimpan</span>
+      <button onclick="logoutGoogle()" class="bg-rose-700 hover:bg-rose-600 text-white px-2 py-0.5 rounded">Keluar</button>
+    </div>
     <div class="flex items-center gap-4">
       <span class="font-bold text-amber-400 flex items-center gap-1.5">
         <i data-lucide="calendar-range" class="w-3.5 h-3.5"></i> aSc Web TimeTables
