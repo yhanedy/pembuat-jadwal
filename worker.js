@@ -1,6 +1,7 @@
 import { jwtVerify, createRemoteJWKSet } from 'https://esm.sh/jose@5.9.6';
 import { validateFullSchedule, buildPublicSchedulePayload } from './public/shared/validator.js';
 
+const FIREBASE_PROJECT_ID = 'pembuat-jadwal-sekolah';
 const FIREBASE_JWKS = createRemoteJWKSet(
   new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com')
 );
@@ -22,7 +23,7 @@ export default {
 
     // 1. HEALTH CHECK
     if (parts[0] === 'api' && parts[1] === 'health') {
-      return jsonResponse({ ok: true, auth: 'google-gmail' }, 200, corsHeaders);
+      return jsonResponse({ ok: true, auth: 'google-gmail', project: FIREBASE_PROJECT_ID }, 200, corsHeaders);
     }
 
     // 2. ENDPOINT PUBLIK SISWA (GET /api/public/:schoolId)
@@ -52,18 +53,18 @@ export default {
       const schoolId = parts[2];
       const action = parts[3];
 
-      const authUser = await verifyFirebaseUser(request, env);
+      const authUser = await verifyFirebaseUser(request);
       if (!authUser) {
         return jsonResponse({ error: 'Silakan login dengan akun Gmail Anda terlebih dahulu.' }, 401, corsHeaders);
       }
 
-      // Isolasi Multi-Sekolah: Setiap user hanya boleh mengelola ruang jadwal miliknya sendiri (sch_<uid>)
+      // Isolasi Multi-Sekolah: Setiap akun Gmail hanya bisa mengakses sch_<uid> miliknya sendiri
       const expectedOwnerId = `sch_${authUser.uid}`;
       if (schoolId !== expectedOwnerId) {
         return jsonResponse({ error: 'Akses ditolak: Anda hanya dapat mengelola jadwal milik akun Gmail Anda.' }, 403, corsHeaders);
       }
 
-      // A. MUAT DATA DARI CLOUD
+      // A. MUAT DATA JADWAL DARI CLOUD
       if (action === 'load' && request.method === 'GET') {
         const raw = env.TIMETABLE_KV ? await env.TIMETABLE_KV.get(`admin:${schoolId}`) : null;
         if (!raw) return jsonResponse({ empty: true, version: 0 }, 200, corsHeaders);
@@ -100,7 +101,7 @@ export default {
         return jsonResponse({ ok: true, version: nextVersion }, 200, corsHeaders);
       }
 
-      // C. PUBLISH KE SISWA
+      // C. PUBLISH JADWAL KE SISWA
       if (action === 'publish' && request.method === 'POST') {
         const payload = await request.json();
         const report = validateFullSchedule(payload);
@@ -123,26 +124,10 @@ export default {
   }
 };
 
-async function verifyFirebaseUser(request, env) {
+async function verifyFirebaseUser(request) {
   const authHeader = request.headers.get('Authorization') || '';
   if (!authHeader.startsWith('Bearer ')) return null;
   const token = authHeader.slice(7);
 
   try {
-    const options = env.FIREBASE_PROJECT_ID
-      ? { issuer: `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}`, audience: env.FIREBASE_PROJECT_ID }
-      : {};
-    const { payload } = await jwtVerify(token, FIREBASE_JWKS, options);
-    if (!payload.sub) return null;
-    return { uid: payload.sub, email: payload.email };
-  } catch {
-    return null;
-  }
-}
-
-function jsonResponse(data, status = 200, extraHeaders = {}) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...extraHeaders, 'Content-Type': 'application/json' }
-  });
-}
+    const { payload } =
