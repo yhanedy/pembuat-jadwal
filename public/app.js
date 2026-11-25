@@ -1,18 +1,20 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+import { checkPlacement, computeForbiddenSlotsMap, validateFullSchedule } from './shared/validator.js';
+import { saveLocalSnapshot, loadLocalSnapshot } from './lib/storage.js';
 
-// TEMPEL KONFIGURASI FIREBASE PROYEK ANDA DI SINI:
 const FIREBASE_CONFIG = {
-  apiKey: "TEMPEL_API_KEY_ANDA",
-  authDomain: "TEMPEL_PROJECT_ID.firebaseapp.com",
-  projectId: "TEMPEL_PROJECT_ID"
+  apiKey: "AIzaSyBZZxpHu8wq-ho66KPjrcn_5KugeerJt2o",
+  authDomain: "pembuat-jadwal-sekolah.firebaseapp.com",
+  projectId: "pembuat-jadwal-sekolah",
+  storageBucket: "pembuat-jadwal-sekolah.firebasestorage.app",
+  messagingSenderId: "205713744621",
+  appId: "1:205713744621:web:5ca89216a45edc277322e4"
 };
 
 const fbApp = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(fbApp);
 let currentUser = null;
-import { checkPlacement, computeForbiddenSlotsMap, validateFullSchedule } from './shared/validator.js';
-import { saveLocalSnapshot, loadLocalSnapshot } from './lib/storage.js';
 
 const DEFAULT_STATE = {
   config: {
@@ -78,22 +80,70 @@ let activeMasterTab = 'SUBJECTS';
 let solverWorker = null;
 
 // ============================================================================
-// 1. INISIALISASI & MUTASI DATA
+// 1. AUTENTIKASI GMAIL & INISIALISASI MULTI-SEKOLAH
 // ============================================================================
-async function init() {
-  const saved = await loadLocalSnapshot(DEFAULT_STATE.config.schoolId);
+window.loginWithGoogle = async () => {
+  const errEl = document.getElementById('loginErrorMsg');
+  errEl.classList.add('hidden');
+  try {
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(auth, provider);
+  } catch (err) {
+    errEl.textContent = 'Gagal masuk dengan Google: ' + err.message;
+    errEl.classList.remove('hidden');
+  }
+};
+
+window.logoutGoogle = async () => {
+  await signOut(auth);
+  location.reload();
+};
+
+onAuthStateChanged(auth, async (user) => {
+  lucide.createIcons();
+  if (!user) {
+    document.getElementById('loginGateModal').classList.remove('hidden');
+    return;
+  }
+
+  currentUser = user;
+  document.getElementById('loginGateModal').classList.add('hidden');
+  document.getElementById('userEmailBadge').textContent = user.email;
+
+  const userSchoolId = `sch_${user.uid}`;
+  const token = await user.getIdToken();
+  const workerUrl = DEFAULT_STATE.config.workerUrl.replace(/\/$/, '');
+
+  try {
+    const res = await fetch(`${workerUrl}/api/admin/${userSchoolId}/load`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const cloudData = await res.json();
+    if (cloudData && !cloudData.empty && cloudData.state) {
+      state = cloudData.state;
+      serverVersion = cloudData.version || 1;
+      state.config.schoolId = userSchoolId;
+      refreshDayFilter();
+      renderAll();
+      return;
+    }
+  } catch (e) {
+    console.warn('Memuat dari penyimpanan lokal:', e);
+  }
+
+  const saved = await loadLocalSnapshot(userSchoolId);
   if (saved?.state) {
     state = saved.state;
     serverVersion = saved.serverVersion || 0;
   } else {
     state = JSON.parse(JSON.stringify(DEFAULT_STATE));
+    state.config.schoolId = userSchoolId;
     rebuildCardsFromContracts();
   }
 
   refreshDayFilter();
   renderAll();
-  lucide.createIcons();
-}
+});
 
 function rebuildCardsFromContracts() {
   state.cards = [];
@@ -233,7 +283,6 @@ function createCardElement(card, isConflict = false) {
   `;
 }
 
-// Drag & Drop 60 FPS
 const matrixTable = document.getElementById('matrixTable');
 document.addEventListener('dragstart', e => {
   const el = e.target.closest('[data-cardid]');
@@ -391,7 +440,7 @@ window.removeCardFromGrid = (cardId) => {
 };
 
 // ============================================================================
-// 4. MENU EDIT DATA MASTER (SEKOLAH, MAPEL, KELAS, RUANG, GURU, PELAJARAN)
+// 4. MENU EDIT DATA MASTER
 // ============================================================================
 window.openMasterModal = (tab = 'SUBJECTS') => {
   document.getElementById('modalMaster').classList.remove('hidden');
@@ -433,8 +482,8 @@ function renderMasterTabContent() {
           <input id="mPeriods" type="number" min="4" max="12" value="${state.config.periodsPerDay}" class="w-full border rounded p-1.5">
         </div>
         <div>
-          <label class="font-bold block mb-1">ID Sekolah (Untuk Link Siswa)</label>
-          <input id="mSchoolId" value="${state.config.schoolId}" class="w-full border rounded p-1.5">
+          <label class="font-bold block mb-1">ID Akun Sekolah (Otomatis)</label>
+          <input value="${state.config.schoolId}" readonly class="w-full border rounded p-1.5 bg-slate-100 text-slate-500">
         </div>
       </div>
       <button onclick="saveSchoolSettings()" class="bg-blue-600 text-white px-4 py-1.5 rounded font-bold mt-2">Simpan Pengaturan Sekolah</button>
@@ -546,7 +595,6 @@ window.saveSchoolSettings = () => {
     d.config.schoolName = document.getElementById('mSchoolName').value;
     d.config.academicYear = document.getElementById('mAcademicYear').value;
     d.config.periodsPerDay = parseInt(document.getElementById('mPeriods').value, 10) || 8;
-    d.config.schoolId = document.getElementById('mSchoolId').value.trim();
   });
   alert('Pengaturan sekolah disimpan.');
 };
@@ -645,7 +693,11 @@ window.processUploadedFile = () => {
       try {
         const parsed = JSON.parse(text);
         if (parsed.config && parsed.cards) {
-          mutate(() => { state = parsed; });
+          const keepSchoolId = state.config.schoolId;
+          mutate(() => {
+            state = parsed;
+            state.config.schoolId = keepSchoolId;
+          });
           closeUploadModal();
           alert('✅ File backup JSON berhasil dimuat!');
         }
@@ -669,10 +721,9 @@ function importTabularRows(rawText) {
 
   mutate(d => {
     lines.forEach((line, idx) => {
-      // Mendukung pemisah Tab (dari Copy-Paste Excel) maupun Koma (CSV)
       const cols = line.includes('\t') ? line.split('\t') : line.split(',');
       if (cols.length < 6) return;
-      if (idx === 0 && cols[0].toLowerCase().includes('guru')) return; // Lewati baris judul
+      if (idx === 0 && cols[0].toLowerCase().includes('guru')) return;
 
       const [tName, tCode, sName, sCode, cName, rName, sessStr, durStr] = cols.map(x => x.trim());
       if (!tName || !sName || !cName) return;
@@ -767,12 +818,18 @@ window.checkAndShowConflicts = () => {
 };
 
 window.saveDraftToCloud = async () => {
+  if (!currentUser) return alert('Silakan login dengan Gmail terlebih dahulu.');
   const url = state.config.workerUrl.replace(/\/$/, '');
   document.getElementById('saveStatus').textContent = '⏳ Menyimpan...';
   try {
+    const token = await currentUser.getIdToken();
     const res = await fetch(`${url}/api/admin/${state.config.schoolId}/save-draft`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'If-Match': String(serverVersion) },
+      headers: {
+        'Content-Type': 'application/json',
+        'If-Match': String(serverVersion),
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify(state)
     });
     const data = await res.json();
@@ -781,11 +838,13 @@ window.saveDraftToCloud = async () => {
     document.getElementById('saveStatus').textContent = `● Cloud v${serverVersion}`;
     alert('✅ Draft jadwal berhasil disimpan ke Cloud!');
   } catch (err) {
+    document.getElementById('saveStatus').textContent = '● Gagal Cloud';
     alert('Gagal simpan cloud: ' + err.message);
   }
 };
 
 window.publishToStudents = async () => {
+  if (!currentUser) return alert('Silakan login dengan Gmail terlebih dahulu.');
   const rep = validateFullSchedule(state);
   if (!rep.isValid) {
     alert(`Masih ada ${rep.hardCount} bentrok merah. Perbaiki dulu sebelum Publish ke siswa.`);
@@ -793,13 +852,18 @@ window.publishToStudents = async () => {
   }
   const url = state.config.workerUrl.replace(/\/$/, '');
   try {
+    const token = await currentUser.getIdToken();
     const res = await fetch(`${url}/api/admin/${state.config.schoolId}/publish`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify(state)
     });
-    if (!res.ok) throw new Error('Gagal publish');
-    alert(`✅ Jadwal berhasil dipublikasikan!\n\nLink Siswa:\n${window.location.origin}/siswa.html?school=${state.config.schoolId}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Gagal publish');
+    alert(`✅ Jadwal berhasil dipublikasikan!\n\nLink Siswa Khusus Sekolah Anda:\n${window.location.origin}/siswa.html?school=${state.config.schoolId}`);
   } catch (err) {
     alert('Gagal publish: ' + err.message);
   }
@@ -824,60 +888,3 @@ window.changeZoom = (delta) => {
   document.getElementById('zoomLabel').textContent = `${zoomLevel}%`;
   document.getElementById('matrixTable').style.transform = `scale(${zoomLevel / 100})`;
 };
-
-init();
-window.loginWithGoogle = async () => {
-  const errEl = document.getElementById('loginErrorMsg');
-  errEl.classList.add('hidden');
-  try {
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
-  } catch (err) {
-    errEl.textContent = 'Gagal masuk dengan Google: ' + err.message;
-    errEl.classList.remove('hidden');
-  }
-};
-
-window.logoutGoogle = async () => {
-  await signOut(auth);
-  location.reload();
-};
-
-onAuthStateChanged(auth, async (user) => {
-  lucide.createIcons();
-  if (!user) {
-    document.getElementById('loginGateModal').classList.remove('hidden');
-    return;
-  }
-
-  currentUser = user;
-  document.getElementById('loginGateModal').classList.add('hidden');
-  document.getElementById('userEmailBadge').textContent = user.email;
-
-  const userSchoolId = `sch_${user.uid}`;
-  const token = await user.getIdToken();
-  const workerUrl = DEFAULT_STATE.config.workerUrl.replace(/\/$/, '');
-
-  // Cek apakah akun Gmail ini sudah punya jadwal tersimpan di Cloud
-  try {
-    const res = await fetch(`${workerUrl}/api/admin/${userSchoolId}/load`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const cloudData = await res.json();
-    if (cloudData && !cloudData.empty && cloudData.state) {
-      state = cloudData.state;
-      serverVersion = cloudData.version || 1;
-      state.config.schoolId = userSchoolId;
-      refreshDayFilter();
-      renderAll();
-      return;
-    }
-  } catch (e) {
-    console.warn('Memuat dari penyimpanan lokal:', e);
-  }
-
-  // Jika pengguna baru pertama kali login, muat dari lokal / contoh awal dengan ID unik akunnya
-  await init();
-  state.config.schoolId = userSchoolId;
-  renderAll();
-});
