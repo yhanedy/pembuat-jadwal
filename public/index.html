@@ -3,277 +3,310 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Web TimeTables - Sistem Jadwal Pelajaran Otomatis</title>
-  <!-- Tailwind CSS via CDN (Tanpa Build) -->
+  <title>aSc Web TimeTables — Jadwal Pelajaran Sekolah</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
   <style>
-    .grid-cell { min-height: 54px; transition: all 0.15s ease; }
-    .card-item { cursor: grab; user-select: none; }
-    .card-item:active { cursor: grabbing; }
+    /* Nuansa Desktop Klasik ala aSc TimeTables */
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .ribbon-btn {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 6px 10px; border-radius: 6px; min-width: 68px; transition: all 0.12s;
+      border: 1px solid transparent;
+    }
+    .ribbon-btn:hover { background-color: #e2e8f0; border-color: #cbd5e1; }
+    .ribbon-btn:active { transform: translateY(1px); }
+
+    /* Sel Kosong ala Kertas Kerja aSc */
+    .asc-cell-empty {
+      background-color: #ffffff;
+      transition: background-color 0.1s;
+    }
+    .asc-cell-empty:hover { background-color: #eff6ff; }
+    .asc-cell-timeoff {
+      background: repeating-linear-gradient(-45deg, #fee2e2, #fee2e2 5px, #fecaca 5px, #fecaca 10px);
+      color: #b91c1c; font-weight: bold; text-align: center;
+    }
+
+    /* Highlight Drag & Drop */
+    .drop-valid { background-color: #86efac !important; outline: 2px solid #16a34a !important; }
+    .drop-invalid { background-color: #fca5a5 !important; outline: 2px solid #dc2626 !important; }
+
+    /* Kartu Pelajaran Gaya aSc (Tegas & Berwarna Cerah) */
+    .asc-card {
+      cursor: grab; user-select: none;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 1px 2px rgba(0,0,0,0.25);
+    }
+    .asc-card:active { cursor: grabbing; }
+
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 4px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+
     @media print {
       .no-print { display: none !important; }
-      body { background: white; }
+      body, main { height: auto !important; overflow: visible !important; }
     }
   </style>
 </head>
-<body class="bg-slate-100 text-slate-800 font-sans">
+<body class="bg-slate-200 text-slate-800 h-screen flex flex-col overflow-hidden text-xs">
 
-  <!-- TOP RIBBON MENU (Mirip antarmuka aSc TimeTables) -->
-  <header class="bg-blue-900 text-white shadow-md no-print">
-    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-      <div class="flex items-center gap-2">
-        <i data-lucide="calendar-clock" class="w-7 h-7 text-amber-400"></i>
-        <div>
-          <h1 class="font-bold text-lg leading-tight">Web TimeTables</h1>
-          <p class="text-xs text-blue-200" id="headerSchoolInfo">SMP Negeri 1 • Tahun Ajaran 2026/2027</p>
-        </div>
-      </div>
-
-      <!-- Navigasi Tab Utama -->
-      <nav class="flex flex-wrap gap-1 bg-blue-950/60 p-1 rounded-lg text-sm">
-        <button onclick="switchTab('board')" id="tab-board" class="tab-btn bg-blue-600 text-white px-3 py-1.5 rounded-md font-medium flex items-center gap-1.5">
-          <i data-lucide="layout-grid" class="w-4 h-4"></i> Papan Jadwal
-        </button>
-        <button onclick="switchTab('master')" id="tab-master" class="tab-btn hover:bg-blue-800 px-3 py-1.5 rounded-md font-medium flex items-center gap-1.5">
-          <i data-lucide="database" class="w-4 h-4"></i> Data Master
-        </button>
-        <button onclick="switchTab('lessons')" id="tab-lessons" class="tab-btn hover:bg-blue-800 px-3 py-1.5 rounded-md font-medium flex items-center gap-1.5">
-          <i data-lucide="book-open" class="w-4 h-4"></i> Kontrak Pelajaran
-        </button>
-        <button onclick="switchTab('settings')" id="tab-settings" class="tab-btn hover:bg-blue-800 px-3 py-1.5 rounded-md font-medium flex items-center gap-1.5">
-          <i data-lucide="settings" class="w-4 h-4"></i> Pengaturan & Cloud
-        </button>
-      </nav>
-
-      <!-- Tombol Aksi Utama -->
-      <div class="flex items-center gap-2">
-        <button onclick="runTestAndVerify()" class="bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded-md text-sm font-semibold flex items-center gap-1.5 shadow">
-          <i data-lucide="check-circle" class="w-4 h-4"></i> Verifikasi
-        </button>
-        <button onclick="generateTimetable()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 px-4 py-1.5 rounded-md text-sm font-bold flex items-center gap-1.5 shadow">
-          <i data-lucide="sparkles" class="w-4 h-4"></i> Generate Jadwal
-        </button>
-      </div>
+  <!-- ===================================================================== -->
+  <!-- 1. TOP MENU BAR ALA DESKTOP WINDOWS / aSc TIMETABLES                  -->
+  <!-- ===================================================================== -->
+  <div class="bg-slate-800 text-slate-200 px-3 py-1 flex items-center justify-between text-[11px] shrink-0 no-print">
+    <div class="flex items-center gap-4">
+      <span class="font-bold text-amber-400 flex items-center gap-1.5">
+        <i data-lucide="calendar-range" class="w-3.5 h-3.5"></i> aSc Web TimeTables
+      </span>
+      <button onclick="openUploadModal()" class="hover:text-white">File / Upload</button>
+      <button onclick="openMasterModal('SUBJECTS')" class="hover:text-white">Edit Data</button>
+      <button onclick="openGeneratorModal()" class="hover:text-white">Jadwal Otomatis</button>
+      <button onclick="window.print()" class="hover:text-white">Cetak PDF</button>
     </div>
-  </header>
-
-  <!-- STATUS / ALERT BAR -->
-  <div id="statusBar" class="max-w-7xl mx-auto px-4 mt-3 hidden no-print">
-    <div id="statusAlert" class="p-3 rounded-lg border text-sm flex items-center justify-between"></div>
+    <div class="flex items-center gap-3">
+      <span id="schoolTitleTop" class="font-semibold text-white">SMP Negeri 1 Nusantara</span>
+      <span id="saveStatus" class="px-2 py-0.5 rounded bg-emerald-900/80 text-emerald-300 border border-emerald-700">● Tersimpan</span>
+    </div>
   </div>
 
-  <main class="max-w-7xl mx-auto px-4 py-5">
+  <!-- ===================================================================== -->
+  <!-- 2. RIBBON TOOLBAR IKON BESAR KHAS aSc TIMETABLES                      -->
+  <!-- ===================================================================== -->
+  <header class="bg-gradient-to-b from-slate-50 to-slate-200 border-b border-slate-300 px-2 py-1.5 flex items-center gap-1 overflow-x-auto shrink-0 no-print shadow-sm">
+    
+    <!-- Grup File & Upload -->
+    <button onclick="openUploadModal()" class="ribbon-btn text-blue-700" title="Upload Excel/CSV atau Backup JSON">
+      <i data-lucide="upload-cloud" class="w-5 h-5 mb-0.5"></i>
+      <span class="font-semibold text-[11px]">Upload Data</span>
+    </button>
+    <button onclick="exportBackupJson()" class="ribbon-btn text-slate-700" title="Simpan File Cadangan ke Komputer">
+      <i data-lucide="download" class="w-5 h-5 mb-0.5"></i>
+      <span class="text-[11px]">Download</span>
+    </button>
 
-    <!-- ========================================== -->
-    <!-- TAB 1: PAPAN JADWAL (SCHEDULE MATRIX BOARD) -->
-    <!-- ========================================== -->
-    <section id="view-board" class="space-y-4">
-      <!-- Toolbar Filter & View -->
-      <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3 no-print">
-        <div class="flex items-center gap-3">
-          <label class="text-sm font-semibold text-slate-600">Tampilan Matriks:</label>
-          <select id="boardViewMode" onchange="renderScheduleBoard()" class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium bg-slate-50">
-            <option value="CLASS">Berdasarkan Kelas (Semua Kelas)</option>
-            <option value="TEACHER">Berdasarkan Guru (Semua Guru)</option>
-            <option value="ROOM">Berdasarkan Ruangan / Klasrum</option>
-          </select>
-        </div>
+    <div class="h-9 w-px bg-slate-300 mx-1"></div>
 
-        <div class="flex flex-wrap items-center gap-2 text-xs">
-          <span class="px-2.5 py-1 bg-slate-100 rounded border text-slate-600">💡 Klik kartu untuk <b>Kunci (Lock)</b> • Seret kartu untuk pindah manual</span>
-          <button onclick="clearUnlockedSchedule()" class="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-1.5 rounded-lg font-medium">
-            Hapus Jadwal (Kecuali Terkunci)
-          </button>
-          <button onclick="window.print()" class="bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg font-medium flex items-center gap-1">
-            <i data-lucide="printer" class="w-3.5 h-3.5"></i> Cetak / PDF
-          </button>
-        </div>
-      </div>
+    <!-- Grup Menu Edit Data Utama (Ikon Besar aSc) -->
+    <button onclick="openMasterModal('SCHOOL')" class="ribbon-btn text-slate-700">
+      <i data-lucide="school" class="w-5 h-5 mb-0.5 text-indigo-600"></i>
+      <span class="text-[11px]">Sekolah</span>
+    </button>
+    <button onclick="openMasterModal('SUBJECTS')" class="ribbon-btn text-slate-700">
+      <i data-lucide="book-open" class="w-5 h-5 mb-0.5 text-blue-600"></i>
+      <span class="text-[11px]">Mapel</span>
+    </button>
+    <button onclick="openMasterModal('CLASSES')" class="ribbon-btn text-slate-700">
+      <i data-lucide="users" class="w-5 h-5 mb-0.5 text-emerald-600"></i>
+      <span class="text-[11px]">Kelas</span>
+    </button>
+    <button onclick="openMasterModal('ROOMS')" class="ribbon-btn text-slate-700">
+      <i data-lucide="door-open" class="w-5 h-5 mb-0.5 text-amber-600"></i>
+      <span class="text-[11px]">Ruangan</span>
+    </button>
+    <button onclick="openMasterModal('TEACHERS')" class="ribbon-btn text-slate-700">
+      <i data-lucide="graduation-cap" class="w-5 h-5 mb-0.5 text-purple-600"></i>
+      <span class="text-[11px]">Guru</span>
+    </button>
+    <button onclick="openMasterModal('CONTRACTS')" class="ribbon-btn text-slate-700">
+      <i data-lucide="layers" class="w-5 h-5 mb-0.5 text-rose-600"></i>
+      <span class="font-semibold text-[11px]">Pelajaran</span>
+    </button>
 
-      <!-- Unplaced Cards Drawer (Kartu yang belum masuk jadwal) -->
-      <div id="unplacedContainer" class="bg-amber-50 border border-amber-200 p-3 rounded-xl no-print">
-        <div class="flex items-center justify-between mb-2">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-amber-800">Kartu Pelajaran Belum Terjadwal (<span id="unplacedCount">0</span>)</h3>
-          <span class="text-xs text-amber-700">Seret kartu ke grid di bawah atau klik "Generate Jadwal"</span>
-        </div>
-        <div id="unplacedCardsList" class="flex flex-wrap gap-2 min-h-[36px]"></div>
-      </div>
+    <div class="h-9 w-px bg-slate-300 mx-1"></div>
 
-      <!-- Tabel Grid Utama -->
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
-        <table class="w-full border-collapse text-xs" id="scheduleTable">
-          <thead id="scheduleTableHead" class="bg-slate-800 text-white"></thead>
-          <tbody id="scheduleTableBody" class="divide-y divide-slate-200"></tbody>
-        </table>
-      </div>
-    </section>
+    <!-- Grup Penyusunan & Validasi -->
+    <button onclick="openGeneratorModal()" class="ribbon-btn bg-amber-100/80 border-amber-300 text-amber-900">
+      <i data-lucide="cpu" class="w-5 h-5 mb-0.5 text-amber-600"></i>
+      <span class="font-bold text-[11px]">Generate</span>
+    </button>
+    <button onclick="checkAndShowConflicts()" class="ribbon-btn text-slate-700">
+      <i data-lucide="shield-check" class="w-5 h-5 mb-0.5 text-emerald-600"></i>
+      <span class="text-[11px]" id="ribbonConflictText">Cek Bentrok</span>
+    </button>
+    <button onclick="undoAction()" id="btnUndo" disabled class="ribbon-btn text-slate-700 disabled:opacity-35">
+      <i data-lucide="undo-2" class="w-5 h-5 mb-0.5"></i>
+      <span class="text-[11px]">Undo</span>
+    </button>
 
-    <!-- ========================================== -->
-    <!-- TAB 2: DATA MASTER (MAPEL, GURU, KELAS, RUANG) -->
-    <!-- ========================================== -->
-    <section id="view-master" class="hidden space-y-6">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        
-        <!-- 1. Mata Pelajaran -->
-        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-          <h2 class="font-bold text-base mb-3 flex items-center gap-2 text-blue-900">
-            <i data-lucide="book" class="w-4 h-4"></i> 1. Mata Pelajaran (Subjects)
-          </h2>
-          <div class="flex gap-2 mb-3">
-            <input id="inSubjName" type="text" placeholder="Nama Mapel (mis: Matematika)" class="border rounded-lg px-3 py-1.5 text-sm flex-1">
-            <input id="inSubjCode" type="text" placeholder="Kode (MTK)" class="border rounded-lg px-3 py-1.5 text-sm w-24">
-            <button onclick="addSubject()" class="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700">+ Tambah</button>
-          </div>
-          <ul id="listSubjects" class="divide-y text-sm max-h-56 overflow-y-auto"></ul>
-        </div>
+    <div class="h-9 w-px bg-slate-300 mx-1"></div>
 
-        <!-- 2. Guru -->
-        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-          <h2 class="font-bold text-base mb-3 flex items-center gap-2 text-blue-900">
-            <i data-lucide="graduation-cap" class="w-4 h-4"></i> 2. Data Guru (Teachers)
-          </h2>
-          <div class="flex gap-2 mb-3">
-            <input id="inTeacherName" type="text" placeholder="Nama Guru" class="border rounded-lg px-3 py-1.5 text-sm flex-1">
-            <input id="inTeacherCode" type="text" placeholder="Kode" class="border rounded-lg px-3 py-1.5 text-sm w-20">
-            <input id="inTeacherColor" type="color" value="#3b82f6" title="Warna Kartu" class="border rounded-lg h-9 w-10 p-0.5 cursor-pointer">
-            <button onclick="addTeacher()" class="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700">+ Tambah</button>
-          </div>
-          <ul id="listTeachers" class="divide-y text-sm max-h-56 overflow-y-auto"></ul>
-        </div>
+    <!-- Grup Simpan Cloud & Publish -->
+    <button onclick="saveDraftToCloud()" class="ribbon-btn text-blue-800">
+      <i data-lucide="save" class="w-5 h-5 mb-0.5 text-blue-600"></i>
+      <span class="font-semibold text-[11px]">Simpan Cloud</span>
+    </button>
+    <button onclick="publishToStudents()" class="ribbon-btn bg-emerald-600 hover:bg-emerald-700 text-white ml-auto">
+      <i data-lucide="send" class="w-5 h-5 mb-0.5"></i>
+      <span class="font-bold text-[11px]">Publish Siswa</span>
+    </button>
+  </header>
 
-        <!-- 3. Kelas -->
-        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-          <h2 class="font-bold text-base mb-3 flex items-center gap-2 text-blue-900">
-            <i data-lucide="users" class="w-4 h-4"></i> 3. Daftar Kelas (Classes)
-          </h2>
-          <div class="flex gap-2 mb-3">
-            <input id="inClassName" type="text" placeholder="Nama Kelas (mis: 7A)" class="border rounded-lg px-3 py-1.5 text-sm flex-1">
-            <button onclick="addClass()" class="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700">+ Tambah</button>
-          </div>
-          <ul id="listClasses" class="divide-y text-sm max-h-56 overflow-y-auto"></ul>
-        </div>
+  <!-- ===================================================================== -->
+  <!-- 3. FILTER BAR & INFO STATUS DRAG                                      -->
+  <!-- ===================================================================== -->
+  <div class="bg-slate-100 border-b border-slate-300 px-3 py-1 flex items-center justify-between shrink-0 no-print">
+    <div class="flex items-center gap-2">
+      <span class="font-semibold text-slate-600">Tampilan Baris:</span>
+      <select id="viewModeSelect" onchange="renderGrid()" class="border border-slate-300 rounded px-2 py-0.5 bg-white font-semibold">
+        <option value="CLASS">Per Kelas (Standar aSc)</option>
+        <option value="TEACHER">Per Guru</option>
+        <option value="ROOM">Per Ruangan</option>
+      </select>
+      <select id="dayFilterSelect" onchange="renderGrid()" class="border border-slate-300 rounded px-2 py-0.5 bg-white">
+        <option value="ALL">Semua Hari</option>
+      </select>
+    </div>
 
-        <!-- 4. Ruangan / Klasrum -->
-        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-          <h2 class="font-bold text-base mb-3 flex items-center gap-2 text-blue-900">
-            <i data-lucide="home" class="w-4 h-4"></i> 4. Ruangan / Klasrum (Classrooms)
-          </h2>
-          <div class="flex gap-2 mb-3">
-            <input id="inRoomName" type="text" placeholder="Nama Ruang (mis: R.7A / Lab IPA)" class="border rounded-lg px-3 py-1.5 text-sm flex-1">
-            <button onclick="addRoom()" class="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700">+ Tambah</button>
-          </div>
-          <ul id="listRooms" class="divide-y text-sm max-h-56 overflow-y-auto"></ul>
-        </div>
-      </div>
+    <div id="statusMessageBar" class="font-semibold text-blue-700 truncate max-w-lg">
+      Klik kartu untuk mengedit/mengunci • Klik kotak kosong untuk pasang cepat • Seret kartu untuk pindah
+    </div>
 
-      <!-- Modal/Panel Time-Off (Batasan Waktu Guru/Kelas) -->
-      <div id="timeOffPanel" class="bg-white p-4 rounded-xl shadow-sm border border-blue-300 hidden">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="font-bold text-sm text-blue-900" id="timeOffTitle">Atur Waktu Kosong (Time-Off)</h3>
-          <button onclick="document.getElementById('timeOffPanel').classList.add('hidden')" class="text-xs bg-slate-200 px-2.5 py-1 rounded">Tutup</button>
-        </div>
-        <p class="text-xs text-slate-500 mb-2">Klik kotak untuk mengubah status: <span class="text-emerald-600 font-bold">✓ Tersedia</span> menjadi <span class="text-rose-600 font-bold">✗ Tidak Bisa Mengajar/Libur</span>.</p>
-        <div id="timeOffGridContainer" class="overflow-x-auto"></div>
-      </div>
-    </section>
+    <div class="flex items-center gap-1">
+      <button onclick="changeZoom(-10)" class="px-2 py-0.5 bg-white border border-slate-300 rounded hover:bg-slate-50">-</button>
+      <span id="zoomLabel" class="w-10 text-center font-mono">100%</span>
+      <button onclick="changeZoom(10)" class="px-2 py-0.5 bg-white border border-slate-300 rounded hover:bg-slate-50">+</button>
+    </div>
+  </div>
 
-    <!-- ========================================== -->
-    <!-- TAB 3: KONTRAK PELAJARAN (LESSONS)         -->
-    <!-- ========================================== -->
-    <section id="view-lessons" class="hidden space-y-4">
-      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-        <h2 class="font-bold text-base mb-3 text-blue-900">Tambah Kontrak Pelajaran (Beban Mengajar)</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2">
-          <select id="selLessonTeacher" class="border rounded-lg px-2.5 py-2 text-sm"></select>
-          <select id="selLessonSubject" class="border rounded-lg px-2.5 py-2 text-sm"></select>
-          <select id="selLessonClass" class="border rounded-lg px-2.5 py-2 text-sm"></select>
-          <select id="selLessonRoom" class="border rounded-lg px-2.5 py-2 text-sm"></select>
-          <div class="flex gap-1">
-            <input id="inLessonSessions" type="number" min="1" max="10" value="2" title="Jumlah Pertemuan per Minggu" class="border rounded-lg px-2 py-2 text-sm w-16">
-            <select id="selLessonDuration" title="Durasi per Pertemuan" class="border rounded-lg px-2 py-2 text-sm flex-1">
-              <option value="1">Single (1 Jam)</option>
-              <option value="2">Double (2 Jam)</option>
-            </select>
-          </div>
-          <button onclick="addLessonContract()" class="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 text-sm font-semibold">+ Tambah Kontrak</button>
-        </div>
-      </div>
-
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
-        <table class="w-full text-left text-sm">
-          <thead class="bg-slate-100 border-b text-slate-700">
-            <tr>
-              <th class="p-3">Guru</th>
-              <th class="p-3">Mata Pelajaran</th>
-              <th class="p-3">Kelas</th>
-              <th class="p-3">Ruangan</th>
-              <th class="p-3">Pertemuan / Minggu</th>
-              <th class="p-3">Durasi</th>
-              <th class="p-3 text-right">Aksi</th>
-            </tr>
-          </thead>
-          <tbody id="listLessons" class="divide-y"></tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- ========================================== -->
-    <!-- TAB 4: PENGATURAN SEKOLAH, FIREBASE & API  -->
-    <!-- ========================================== -->
-    <section id="view-settings" class="hidden grid grid-cols-1 md:grid-cols-2 gap-6">
-      <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
-        <h2 class="font-bold text-base text-blue-900">Pengaturan Dasar Sekolah</h2>
-        <div>
-          <label class="block text-xs font-semibold mb-1">Nama Sekolah</label>
-          <input id="cfgSchoolName" type="text" class="w-full border rounded-lg px-3 py-2 text-sm">
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-xs font-semibold mb-1">Tahun Ajaran</label>
-            <input id="cfgAcademicYear" type="text" class="w-full border rounded-lg px-3 py-2 text-sm">
-          </div>
-          <div>
-            <label class="block text-xs font-semibold mb-1">Jumlah Jam Pelajaran / Hari</label>
-            <input id="cfgPeriodsPerDay" type="number" min="4" max="12" class="w-full border rounded-lg px-3 py-2 text-sm">
-          </div>
-        </div>
-        <div>
-          <label class="block text-xs font-semibold mb-1">Hari Aktif (Pisahkan dengan koma)</label>
-          <input id="cfgDays" type="text" class="w-full border rounded-lg px-3 py-2 text-sm">
-        </div>
-        <button onclick="saveSchoolConfig()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700">Simpan Pengaturan</button>
-      </div>
-
-      <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
-        <h2 class="font-bold text-base text-blue-900">Integrasi Cloud (Firebase & Cloudflare Worker)</h2>
-        <p class="text-xs text-slate-500">Secara default data tersimpan otomatis di browser Anda. Isi URL di bawah ini jika ingin menyinkronkan ke Cloudflare Worker API & Firebase Anda.</p>
-        <div>
-          <label class="block text-xs font-semibold mb-1">URL Cloudflare Worker API (Opsional)</label>
-          <input id="cfgWorkerUrl" type="url" placeholder="https://jadwal-api.subdomain-anda.workers.dev" class="w-full border rounded-lg px-3 py-2 text-sm">
-        </div>
-        <div>
-          <label class="block text-xs font-semibold mb-1">ID Sekolah (School ID)</label>
-          <input id="cfgSchoolId" type="text" value="smpn-1-default" class="w-full border rounded-lg px-3 py-2 text-sm">
-        </div>
-        <div class="flex flex-wrap gap-2 pt-2">
-          <button onclick="syncToCloudflareWorker()" class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-semibold">
-            Kirim & Simpan ke Cloud API
-          </button>
-          <button onclick="exportJsonBackup()" class="bg-slate-700 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-semibold">
-            Download Backup (.JSON)
-          </button>
-          <button onclick="resetDemoData()" class="bg-rose-100 hover:bg-rose-200 text-rose-800 px-3 py-2 rounded-lg text-sm font-medium">
-            Reset Data Contoh
-          </button>
-        </div>
-      </div>
-    </section>
-
+  <!-- ===================================================================== -->
+  <!-- 4. KANVAS UTAMA (FULL WIDTH GRID MATRIKS ALA aSc TIMETABLES)          -->
+  <!-- ===================================================================== -->
+  <main class="flex-1 overflow-auto bg-slate-300/60 p-2 relative">
+    <table id="matrixTable" class="border-collapse bg-white shadow-sm origin-top-left transition-transform">
+      <thead id="matrixHead" class="sticky top-0 z-20"></thead>
+      <tbody id="matrixBody"></tbody>
+    </table>
   </main>
 
-  <!-- Aplikasi Utama -->
-  <script src="app.js"></script>
+  <!-- ===================================================================== -->
+  <!-- 5. DOCK KARTU BAWAH (UNPLACED CARDS STRIP KHAS aSc TIMETABLES)         -->
+  <!-- ===================================================================== -->
+  <section class="h-28 bg-slate-100 border-t-2 border-slate-400 flex flex-col shrink-0 no-print">
+    <div class="bg-slate-200 px-3 py-1 border-b border-slate-300 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="font-bold text-slate-700">Kartu Belum Terjadwal (<span id="unplacedCount">0</span>)</span>
+        <input id="deckSearchInput" oninput="renderBottomDeck()" type="text" placeholder="Filter kartu (ketik kelas/guru/mapel)..." class="px-2 py-0.5 border border-slate-300 rounded bg-white w-56">
+      </div>
+      <div class="flex items-center gap-3 text-[11px]">
+        <span class="flex items-center gap-1"><i class="w-3 h-3 bg-blue-600 inline-block rounded-sm"></i> Eksakta</span>
+        <span class="flex items-center gap-1"><i class="w-3 h-3 bg-emerald-600 inline-block rounded-sm"></i> Sosial</span>
+        <span class="flex items-center gap-1"><i class="w-3 h-3 bg-amber-400 inline-block rounded-sm"></i> Bahasa</span>
+        <span class="flex items-center gap-1"><i class="w-3 h-3 bg-purple-600 inline-block rounded-sm"></i> Seni/PJOK</span>
+      </div>
+    </div>
+    <div id="bottomCardDeck" class="flex-1 overflow-x-auto overflow-y-hidden p-2 flex items-center gap-2"></div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- POPOVER KLIK SEL KOSONG / EDIT KARTU DI TEMPAT                        -->
+  <!-- ===================================================================== -->
+  <div id="slotPopover" class="hidden fixed z-50 w-72 bg-white rounded-lg shadow-2xl border border-slate-400 p-3 space-y-2.5">
+    <div class="flex justify-between items-center border-b pb-1.5 font-bold text-slate-800">
+      <span id="popoverTitle">Pasang Kartu Jadwal</span>
+      <button onclick="closePopover()" class="text-slate-400 hover:text-slate-700">✕</button>
+    </div>
+    <div id="popoverBody" class="space-y-2"></div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL EDIT DATA MASTER (SEKOLAH / MAPEL / KELAS / RUANG / GURU / KONTRAK) -->
+  <!-- ===================================================================== -->
+  <div id="modalMaster" class="hidden fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
+    <div class="bg-white rounded-lg shadow-2xl border border-slate-400 w-full max-w-4xl max-h-[88vh] flex flex-col overflow-hidden">
+      <!-- Header Dialog ala Windows -->
+      <div class="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+        <span class="font-bold text-sm flex items-center gap-2"><i data-lucide="database" class="w-4 h-4 text-amber-400"></i> Edit Data Master & Pelajaran</span>
+        <button onclick="closeMasterModal()" class="hover:text-rose-400 font-bold">✕</button>
+      </div>
+
+      <!-- Tab Navigasi Data Master -->
+      <div class="bg-slate-100 border-b border-slate-300 px-3 pt-2 flex gap-1">
+        <button onclick="switchMasterTab('SCHOOL')" id="mtab-SCHOOL" class="px-3 py-1.5 rounded-t font-semibold border border-b-0 bg-white">1. Sekolah & Jam</button>
+        <button onclick="switchMasterTab('SUBJECTS')" id="mtab-SUBJECTS" class="px-3 py-1.5 rounded-t font-semibold text-slate-600">2. Mata Pelajaran</button>
+        <button onclick="switchMasterTab('CLASSES')" id="mtab-CLASSES" class="px-3 py-1.5 rounded-t font-semibold text-slate-600">3. Kelas</button>
+        <button onclick="switchMasterTab('ROOMS')" id="mtab-ROOMS" class="px-3 py-1.5 rounded-t font-semibold text-slate-600">4. Ruangan</button>
+        <button onclick="switchMasterTab('TEACHERS')" id="mtab-TEACHERS" class="px-3 py-1.5 rounded-t font-semibold text-slate-600">5. Guru</button>
+        <button onclick="switchMasterTab('CONTRACTS')" id="mtab-CONTRACTS" class="px-3 py-1.5 rounded-t font-bold text-blue-700">6. Pelajaran (Kartu)</button>
+      </div>
+
+      <!-- Konten Dinamis Tab Data Master -->
+      <div id="masterModalBody" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
+
+      <div class="bg-slate-100 border-t border-slate-300 px-4 py-2 flex justify-end">
+        <button onclick="closeMasterModal()" class="bg-blue-600 text-white px-4 py-1.5 rounded font-bold hover:bg-blue-700">Selesai & Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL MENU UPLOAD (IMPORT EXCEL/CSV, COPY-PASTE EXCEL, JSON)          -->
+  <!-- ===================================================================== -->
+  <div id="modalUpload" class="hidden fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
+    <div class="bg-white rounded-lg shadow-2xl border border-slate-400 w-full max-w-2xl overflow-hidden">
+      <div class="bg-blue-800 text-white px-4 py-2.5 flex items-center justify-between">
+        <span class="font-bold text-sm flex items-center gap-2"><i data-lucide="upload-cloud" class="w-4 h-4"></i> Menu Upload & Import Data Jadwal</span>
+        <button onclick="closeUploadModal()" class="hover:text-rose-300 font-bold">✕</button>
+      </div>
+
+      <div class="p-4 space-y-4">
+        <!-- Cara 1: Upload File CSV / JSON -->
+        <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
+          <div class="font-bold text-blue-900">Cara 1: Upload File CSV (Dari Excel) atau File Backup (.JSON)</div>
+          <p class="text-slate-600">Format kolom CSV: <code class="bg-white px-1 border">Guru,KodeGuru,Mapel,KodeMapel,Kelas,Ruang,Pertemuan,JamPerPertemuan</code></p>
+          <div class="flex flex-wrap items-center gap-2 pt-1">
+            <input type="file" id="uploadFileInput" accept=".csv,.json,.txt" class="text-xs bg-white border border-slate-300 rounded p-1">
+            <button onclick="processUploadedFile()" class="bg-blue-600 text-white px-3 py-1.5 rounded font-bold hover:bg-blue-700">Proses File</button>
+            <button onclick="downloadCsvTemplate()" class="bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded hover:bg-slate-50 ml-auto">📥 Download Contoh CSV</button>
+          </div>
+        </div>
+
+        <!-- Cara 2: Copy-Paste Langsung dari Tabel Excel -->
+        <div class="p-3 bg-slate-50 border border-slate-300 rounded-lg space-y-2">
+          <div class="font-bold text-slate-800">Cara 2: Copy-Paste Langsung dari Microsoft Excel / Google Sheets</div>
+          <p class="text-slate-600">Blok baris data pembagian tugas mengajar di Excel (urutan kolom sama seperti di atas), lalu tempel di kotak bawah ini:</p>
+          <textarea id="pasteExcelArea" rows="5" placeholder="Contoh:&#10;Pak Budi	BUD	Matematika	MTK	7A	R.7A	2	2&#10;Bu Siti	SIT	Bahasa Indonesia	IND	7A	R.7A	2	2" class="w-full border border-slate-300 rounded p-2 font-mono text-[11px]"></textarea>
+          <div class="flex justify-end gap-2">
+            <button onclick="closeUploadModal()" class="px-3 py-1.5 rounded bg-slate-200">Batal</button>
+            <button onclick="processPastedExcel()" class="bg-emerald-600 text-white px-4 py-1.5 rounded font-bold hover:bg-emerald-700">Import Data ke Jadwal</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL GENERATOR OTOMATIS                                              -->
+  <!-- ===================================================================== -->
+  <div id="modalGenerator" class="hidden fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
+    <div class="bg-white rounded-lg shadow-2xl border border-slate-400 max-w-md w-full p-4 space-y-3">
+      <div class="font-bold text-sm border-b pb-2 flex justify-between">
+        <span>⚙️ Pembuat Jadwal Otomatis (aSc Solver)</span>
+        <button onclick="closeGeneratorModal()">✕</button>
+      </div>
+      <div id="genFormArea" class="space-y-2">
+        <label class="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-slate-50">
+          <input type="radio" name="genMode" value="EMPTY_ONLY" checked>
+          <span><b>Lanjutkan isi slot kosong</b> (kartu yang sudah terpasang tidak diubah)</span>
+        </label>
+        <label class="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-slate-50">
+          <input type="radio" name="genMode" value="ALL">
+          <span><b>Susun ulang semua jadwal</b> (kecuali kartu yang dikunci 🔒)</span>
+        </label>
+        <div class="flex justify-end gap-2 pt-2">
+          <button onclick="closeGeneratorModal()" class="px-3 py-1.5 bg-slate-200 rounded">Batal</button>
+          <button onclick="startWorkerGeneration()" class="px-4 py-1.5 bg-amber-500 text-slate-950 font-bold rounded">Mulai Generate</button>
+        </div>
+      </div>
+      <div id="genProgressArea" class="hidden space-y-2">
+        <div class="font-semibold text-blue-700" id="genProgressLabel">Menyusun jadwal...</div>
+        <div class="w-full bg-slate-200 h-3 rounded overflow-hidden">
+          <div id="genProgressBar" class="bg-blue-600 h-full transition-all" style="width: 15%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./app.js"></script>
 </body>
 </html>
