@@ -1,7 +1,5 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
-import { checkPlacement, computeForbiddenSlotsMap, validateFullSchedule } from './shared/validator.js';
-import { saveLocalSnapshot, loadLocalSnapshot } from './lib/storage.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyBZZxpHu8wq-ho66KPjrcn_5KugeerJt2o",
@@ -16,6 +14,82 @@ const fbApp = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(fbApp);
 let currentUser = null;
 
+// ============================================================================
+// FUNGSI VALIDASI & PENYIMPANAN LOKAL MANDIRI (ANTI GAGAL IMPORT)
+// ============================================================================
+function checkPlacement(state, card, dayIndex, startPeriod, ignoreCardId = null) {
+  const k = state.contracts.find(x => x.id === card.contractId);
+  if (!k) return { valid: false, reason: 'Kontrak tidak ditemukan' };
+  const dur = k.duration || 1;
+  if (startPeriod + dur > state.config.periodsPerDay) {
+    return { valid: false, reason: 'Melebihi jumlah jam per hari' };
+  }
+
+  const cls = state.classes.find(c => c.id === k.classId);
+  const teacher = state.teachers.find(t => t.id === k.teacherId);
+
+  for (let offset = 0; offset < dur; offset++) {
+    const p = startPeriod + offset;
+    const key = `${dayIndex}-${p}`;
+    if (cls?.timeOff?.[key]) return { valid: false, reason: `Kelas ${cls.name} libur pada jam ini` };
+    if (teacher?.timeOff?.[key]) return { valid: false, reason: `${teacher.name} tidak mengajar pada jam ini` };
+
+    for (const other of state.cards) {
+      if (other.cardId === ignoreCardId || other.dayIndex !== dayIndex || other.startPeriod === null) continue;
+      const ok = state.contracts.find(x => x.id === other.contractId);
+      if (!ok) continue;
+      const oEnd = other.startPeriod + (ok.duration || 1);
+      if (p >= other.startPeriod && p < oEnd) {
+        if (ok.classId === k.classId) return { valid: false, reason: `Kelas ${cls?.name} sudah ada pelajaran` };
+        if (ok.teacherId === k.teacherId) return { valid: false, reason: `${teacher?.name} sedang mengajar kelas lain` };
+        if (k.roomId && ok.roomId === k.roomId) return { valid: false, reason: 'Ruangan sedang dipakai' };
+      }
+    }
+  }
+  return { valid: true };
+}
+
+function computeForbiddenSlotsMap(state, card) {
+  const map = new Map();
+  for (let d = 0; d < state.config.days.length; d++) {
+    for (let p = 0; p < state.config.periodsPerDay; p++) {
+      const res = checkPlacement(state, card, d, p, card.cardId);
+      if (!res.valid) map.set(`${d}-${p}`, res.reason);
+    }
+  }
+  return map;
+}
+
+function validateFullSchedule(state) {
+  const conflicts = [];
+  for (const card of state.cards) {
+    if (card.dayIndex === null || card.startPeriod === null) continue;
+    const res = checkPlacement(state, card, card.dayIndex, card.startPeriod, card.cardId);
+    if (!res.valid) {
+      const k = state.contracts.find(x => x.id === card.contractId);
+      const subj = state.subjects.find(s => s.id === k?.subjectId)?.name || 'Mapel';
+      conflicts.push({ title: `${subj} (${state.config.days[card.dayIndex]} Jam ${card.startPeriod + 1})`, detail: res.reason });
+    }
+  }
+  return { isValid: conflicts.length === 0, hardCount: conflicts.length, conflicts };
+}
+
+function saveLocalSnapshot(schoolId, stateObj, version) {
+  try {
+    localStorage.setItem(`asc_snap_${schoolId}`, JSON.stringify({ state: stateObj, serverVersion: version }));
+  } catch (e) { console.warn(e); }
+}
+
+function loadLocalSnapshot(schoolId) {
+  try {
+    const raw = localStorage.getItem(`asc_snap_${schoolId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+// ============================================================================
+// DATA BAWAAN & STATE UTAMA
+// ============================================================================
 const DEFAULT_STATE = {
   config: {
     schoolId: 'smpn-1-nusantara',
@@ -85,12 +159,16 @@ let solverWorker = null;
 window.loginWithGoogle = async () => {
   const errEl = document.getElementById('loginErrorMsg');
   errEl.classList.add('hidden');
+  const provider = new GoogleAuthProvider();
   try {
-    const provider = new GoogleAuthProvider();
     await signInWithPopup(auth, provider);
   } catch (err) {
-    errEl.textContent = 'Gagal masuk dengan Google: ' + err.message;
-    errEl.classList.remove('hidden');
+    if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request') {
+      await signInWithRedirect(auth, provider);
+    } else {
+      errEl.textContent = 'Gagal masuk: ' + err.message;
+      errEl.classList.remove('hidden');
+    }
   }
 };
 
@@ -99,8 +177,10 @@ window.logoutGoogle = async () => {
   location.reload();
 };
 
+getRedirectResult(auth).catch(() => {});
+
 onAuthStateChanged(auth, async (user) => {
-  lucide.createIcons();
+  if (window.lucide) window.lucide.createIcons();
   if (!user) {
     document.getElementById('loginGateModal').classList.remove('hidden');
     return;
@@ -131,7 +211,7 @@ onAuthStateChanged(auth, async (user) => {
     console.warn('Memuat dari penyimpanan lokal:', e);
   }
 
-  const saved = await loadLocalSnapshot(userSchoolId);
+  const saved = loadLocalSnapshot(userSchoolId);
   if (saved?.state) {
     state = saved.state;
     serverVersion = saved.serverVersion || 0;
