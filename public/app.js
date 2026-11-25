@@ -15,7 +15,7 @@ const auth = getAuth(fbApp);
 let currentUser = null;
 
 // ============================================================================
-// VALIDASI & PENYIMPANAN LOKAL (TERMASUK BATAS JAM PER HARI SEPERTI JUMAT)
+// VALIDASI & ATURAN JAM KHUSUS (UPACARA, BATAS JUMAT, JAM LIBUR GURU)
 // ============================================================================
 function getMaxPeriodForDay(state, dayIndex) {
   const dayName = state.config.days[dayIndex];
@@ -42,8 +42,11 @@ function checkPlacement(state, card, dayIndex, startPeriod, ignoreCardId = null)
   for (let offset = 0; offset < dur; offset++) {
     const p = startPeriod + offset;
     const key = `${dayIndex}-${p}`;
+    if (state.config.globalBlocked?.[key]) {
+      return { valid: false, reason: `Jam diblokir sekolah (${state.config.globalBlocked[key]})` };
+    }
     if (cls?.timeOff?.[key]) return { valid: false, reason: `Kelas ${cls.name} libur pada jam ini` };
-    if (teacher?.timeOff?.[key]) return { valid: false, reason: `${teacher.name} tidak mengajar pada jam ini` };
+    if (teacher?.timeOff?.[key]) return { valid: false, reason: `${teacher.name} minta libur pada jam ini` };
 
     for (const other of state.cards) {
       if (other.cardId === ignoreCardId || other.dayIndex !== dayIndex || other.startPeriod === null) continue;
@@ -116,14 +119,10 @@ function splitHoursToBlocks(totalHours) {
   return blocks;
 }
 
-// ============================================================================
-// PARSER CSV/TSV TAHAN KOMA & MULTI-BARIS DALAM SEL (RFC 4180)
-// ============================================================================
 function parseFullTableText(rawText) {
   const clean = rawText.replace(/^\uFEFF/, '').trim();
   if (!clean) return [];
 
-  // Deteksi pemisah dari baris pertama di luar tanda kutip
   let sep = ',';
   let inQ = false;
   for (let i = 0; i < clean.length; i++) {
@@ -144,12 +143,8 @@ function parseFullTableText(rawText) {
     const next = clean[i + 1];
 
     if (ch === '"') {
-      if (inQ && next === '"') {
-        cell += '"';
-        i++;
-      } else {
-        inQ = !inQ;
-      }
+      if (inQ && next === '"') { cell += '"'; i++; }
+      else { inQ = !inQ; }
     } else if (ch === sep && !inQ) {
       row.push(cell.replace(/\s+/g, ' ').trim());
       cell = '';
@@ -165,21 +160,15 @@ function parseFullTableText(rawText) {
   }
   row.push(cell.replace(/\s+/g, ' ').trim());
   if (row.some(c => c !== '')) rows.push(row);
-
   return rows;
 }
 
-// Membuat singkatan kode otomatis dari nama guru (mengabaikan gelar depan/belakang)
 function generateTeacherCode(fullName, fallbackIndex) {
   const tanpaGelarBelakang = fullName.split(',')[0].trim();
   const bersih = tanpaGelarBelakang.replace(/^(Drs\.|Dra\.|Dr\.|Ir\.|H\.|Hj\.|Prof\.|S\.Pd\.?|M\.Pd\.?|M\.Si\.?)\s+/gi, '').trim();
   const words = bersih.split(/\s+/).filter(Boolean);
-  if (words.length >= 2) {
-    return (words[0].slice(0, 2) + words[1].slice(0, 2)).toUpperCase();
-  }
-  if (words.length === 1) {
-    return words[0].slice(0, 4).toUpperCase();
-  }
+  if (words.length >= 2) return (words[0].slice(0, 2) + words[1].slice(0, 2)).toUpperCase();
+  if (words.length === 1) return words[0].slice(0, 4).toUpperCase();
   return `G${String(fallbackIndex).padStart(2, '0')}`;
 }
 
@@ -192,14 +181,17 @@ const DEFAULT_STATE = {
     schoolName: 'SMAN 2 Karanganyar',
     academicYear: '2026/2027',
     days: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'],
-    periodsPerDay: 9,
+    periodsPerDay: 10,
     dayMaxPeriods: {
-      Senin: 9,
-      Selasa: 9,
-      Rabu: 9,
-      Kamis: 9,
+      Senin: 10,
+      Selasa: 10,
+      Rabu: 10,
+      Kamis: 10,
       Jumat: 6,
       Sabtu: 8
+    },
+    globalBlocked: {
+      '0-0': 'Upacara'
     },
     workerUrl: 'https://pembuat-jadwal.yhanedy.workers.dev'
   },
@@ -228,10 +220,11 @@ let draggingCard = null;
 let forbiddenMap = new Map();
 let zoomLevel = 100;
 let activeMasterTab = 'CONTRACTS';
+let editingTeacherTimeOffId = null;
 let solverWorker = null;
 
 // ============================================================================
-// 1. LOGIN GMAIL & SINKRONISASI PENGATURAN HARI
+// 1. LOGIN GMAIL & SINKRONISASI KONFIGURASI
 // ============================================================================
 window.loginWithGoogle = async () => {
   const errEl = document.getElementById('loginErrorMsg');
@@ -259,13 +252,16 @@ getRedirectResult(auth).catch(() => {});
 function normalizeStateConfig(st) {
   if (!st.config.dayMaxPeriods) {
     st.config.dayMaxPeriods = {
-      Senin: st.config.periodsPerDay || 9,
-      Selasa: st.config.periodsPerDay || 9,
-      Rabu: st.config.periodsPerDay || 9,
-      Kamis: st.config.periodsPerDay || 9,
+      Senin: st.config.periodsPerDay || 10,
+      Selasa: st.config.periodsPerDay || 10,
+      Rabu: st.config.periodsPerDay || 10,
+      Kamis: st.config.periodsPerDay || 10,
       Jumat: 6,
       Sabtu: Math.min(8, st.config.periodsPerDay || 8)
     };
+  }
+  if (!st.config.globalBlocked) {
+    st.config.globalBlocked = {};
   }
   const validTeacherIds = new Set(st.teachers.map(t => t.id));
   const validSubjectIds = new Set(st.subjects.map(s => s.id));
@@ -351,7 +347,7 @@ function renderAll() {
 }
 
 // ============================================================================
-// 2. GRID MATRIKS KLASIK (OTOMATIS BLOKIR JAM > 6 PADA HARI JUMAT)
+// 2. GRID MATRIKS KLASIK (TAMPILKAN BLOKIR UPACARA, JAM JUMAT, & LIBUR GURU)
 // ============================================================================
 window.renderGrid = () => {
   const mode = document.getElementById('viewModeSelect').value;
@@ -389,7 +385,8 @@ window.renderGrid = () => {
       for (let p = 0; p < periods; p++) {
         const slotKey = `${d.index}-${p}`;
         const isDayClosed = p >= maxP;
-        const isTimeOff = isDayClosed || row.timeOff?.[slotKey];
+        const globalBlockLabel = state.config.globalBlocked?.[slotKey];
+        const isRowTimeOff = row.timeOff?.[slotKey];
 
         const cardsHere = state.cards.filter(c => {
           if (c.dayIndex !== d.index || c.startPeriod === null) return false;
@@ -418,11 +415,22 @@ window.renderGrid = () => {
             class="border border-slate-300 h-12 p-0.5 asc-cell-timeoff text-[10px]">
             Libur
           </td>`;
+        } else if (globalBlockLabel) {
+          tr += `<td data-day="${d.index}" data-period="${p}"
+            title="Jam diblokir sekolah: ${globalBlockLabel}"
+            class="border border-slate-300 h-12 p-0.5 bg-amber-100 text-amber-900 font-bold text-center text-[10px] select-none">
+            ${globalBlockLabel}
+          </td>`;
+        } else if (isRowTimeOff) {
+          tr += `<td data-day="${d.index}" data-period="${p}"
+            title="${row.name} tidak mengajar / libur pada jam ini"
+            class="border border-slate-300 h-12 p-0.5 asc-cell-timeoff text-[10px]">
+            X (Libur)
+          </td>`;
         } else {
           tr += `<td data-day="${d.index}" data-period="${p}" data-rowid="${row.id}"
             onclick="onEmptyCellClick(event, ${d.index}, ${p}, '${row.id}')"
-            class="border border-slate-300 h-12 p-0.5 ${isTimeOff ? 'asc-cell-timeoff' : 'asc-cell-empty cursor-pointer'}">
-            ${isTimeOff ? 'X' : ''}
+            class="border border-slate-300 h-12 p-0.5 asc-cell-empty cursor-pointer">
           </td>`;
         }
       }
@@ -614,14 +622,16 @@ window.removeCardFromGrid = (cardId) => {
 };
 
 // ============================================================================
-// 4. MENU EDIT DATA MASTER
+// 4. MENU EDIT DATA MASTER (UPACARA SEKOLAH & MATRIKS LIBUR PER GURU)
 // ============================================================================
 window.openMasterModal = (tab = 'CONTRACTS') => {
+  editingTeacherTimeOffId = null;
   document.getElementById('modalMaster').classList.remove('hidden');
   switchMasterTab(tab);
 };
 
 window.closeMasterModal = () => {
+  editingTeacherTimeOffId = null;
   document.getElementById('modalMaster').classList.add('hidden');
   refreshDayFilter();
   renderAll();
@@ -629,6 +639,7 @@ window.closeMasterModal = () => {
 
 window.switchMasterTab = (tab) => {
   activeMasterTab = tab;
+  editingTeacherTimeOffId = null;
   ['SCHOOL', 'SUBJECTS', 'CLASSES', 'ROOMS', 'TEACHERS', 'CONTRACTS'].forEach(t => {
     const btn = document.getElementById(`mtab-${t}`);
     btn.className = t === tab
@@ -644,9 +655,10 @@ function renderMasterTabContent() {
   if (activeMasterTab === 'SCHOOL') {
     const hasSabtu = state.config.days.includes('Sabtu');
     const allPossibleDays = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const periods = state.config.periodsPerDay;
 
     box.innerHTML = `
-      <div class="grid grid-cols-2 gap-3 max-w-xl">
+      <div class="grid grid-cols-2 gap-3 max-w-2xl">
         <div>
           <label class="font-bold block mb-1">Nama Sekolah</label>
           <input id="mSchoolName" value="${state.config.schoolName}" class="w-full border rounded p-1.5">
@@ -664,16 +676,16 @@ function renderMasterTabContent() {
         </div>
         <div>
           <label class="font-bold block mb-1">Maksimal Jam Pelajaran / Hari</label>
-          <input id="mPeriods" type="number" min="4" max="14" value="${state.config.periodsPerDay}" class="w-full border rounded p-1.5">
+          <input id="mPeriods" type="number" min="4" max="14" value="${periods}" class="w-full border rounded p-1.5">
         </div>
       </div>
 
-      <div class="bg-slate-100 border border-slate-300 rounded p-3 max-w-xl mt-2">
+      <div class="bg-slate-100 border border-slate-300 rounded p-3 max-w-2xl mt-2">
         <div class="font-bold text-slate-800 mb-2">Batas Jam Pelajaran Per Hari (Contoh: Jumat sampai jam ke-6):</div>
         <div class="grid grid-cols-6 gap-2 text-center">
           ${allPossibleDays.map(day => {
             const active = state.config.days.includes(day);
-            const val = state.config.dayMaxPeriods?.[day] ?? (day === 'Jumat' ? 6 : state.config.periodsPerDay);
+            const val = state.config.dayMaxPeriods?.[day] ?? (day === 'Jumat' ? 6 : periods);
             return `
               <div class="p-2 rounded border ${active ? 'bg-white border-slate-300' : 'bg-slate-200 border-slate-300 opacity-50'}">
                 <div class="font-bold text-xs mb-1">${day}</div>
@@ -682,6 +694,46 @@ function renderMasterTabContent() {
               </div>
             `;
           }).join('')}
+        </div>
+      </div>
+
+      <div class="bg-amber-50 border border-amber-300 rounded p-3 max-w-2xl mt-2">
+        <div class="font-bold text-amber-900 mb-1">Blokir Jam Seluruh Sekolah (Upacara Bendera / Pembinaan / Kultum):</div>
+        <p class="text-[11px] text-amber-800 mb-2">Klik kotak di bawah untuk memblokir jam bagi seluruh kelas & guru (misal: <b>Senin Jam ke-1 = Upacara</b>).</p>
+        <div class="overflow-x-auto">
+          <table class="border-collapse border border-slate-400 bg-white text-center text-xs">
+            <thead>
+              <tr class="bg-slate-200">
+                <th class="border border-slate-400 px-2 py-1 text-left">Hari</th>
+                ${Array.from({ length: periods }, (_, p) => `<th class="border border-slate-400 px-2 py-1 w-12">Jam ${p + 1}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${state.config.days.map((dayName, dIdx) => {
+                const maxP = getMaxPeriodForDay(state, dIdx);
+                return `
+                  <tr>
+                    <td class="border border-slate-400 px-2 py-1 font-bold text-left bg-slate-100">${dayName}</td>
+                    ${Array.from({ length: periods }, (_, p) => {
+                      if (p >= maxP) {
+                        return `<td class="border border-slate-400 bg-slate-200 text-slate-400">Libur</td>`;
+                      }
+                      const key = `${dIdx}-${p}`;
+                      const label = state.config.globalBlocked?.[key];
+                      return `
+                        <td onclick="toggleGlobalBlock(${dIdx}, ${p})"
+                          class="border border-slate-400 py-1.5 cursor-pointer font-bold select-none ${
+                            label ? 'bg-amber-400 text-slate-950' : 'hover:bg-blue-50 text-emerald-700'
+                          }">
+                          ${label ? label : '✓'}
+                        </td>
+                      `;
+                    }).join('')}
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -736,21 +788,97 @@ function renderMasterTabContent() {
       </table>
     `;
   } else if (activeMasterTab === 'TEACHERS') {
+    const editingTeacher = editingTeacherTimeOffId
+      ? state.teachers.find(t => t.id === editingTeacherTimeOffId)
+      : null;
+    const periods = state.config.periodsPerDay;
+
     box.innerHTML = `
-      <div class="flex gap-2 bg-slate-100 p-2 rounded border max-w-lg">
+      ${editingTeacher ? `
+        <div class="bg-rose-50 border-2 border-rose-400 rounded p-3 mb-3">
+          <div class="flex justify-between items-center mb-2">
+            <div>
+              <span class="font-bold text-rose-900 text-sm">Atur Jam Libur / Permintaan Khusus: ${editingTeacher.name} (${editingTeacher.code})</span>
+              <p class="text-[11px] text-rose-800">Klik kotak sel untuk menandai <b>X (Libur)</b>, klik <b>Nama Hari</b> untuk libur 1 hari penuh, atau klik <b>Nomor Jam</b> untuk blokir jam tertentu di semua hari (misal Jam 9 & 10).</p>
+            </div>
+            <button onclick="closeTeacherTimeOff()" class="bg-slate-800 text-white px-3 py-1 rounded font-bold">Selesai</button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="border-collapse border border-slate-400 bg-white text-center text-xs w-full">
+              <thead>
+                <tr class="bg-slate-200">
+                  <th class="border border-slate-400 px-2 py-1 text-left">Hari (Klik untuk 1 hari)</th>
+                  ${Array.from({ length: periods }, (_, p) => `
+                    <th onclick="toggleTeacherPeriodAllDays('${editingTeacher.id}', ${p})"
+                      title="Klik untuk memblokir Jam ke-${p + 1} di semua hari"
+                      class="border border-slate-400 px-2 py-1 cursor-pointer hover:bg-rose-200">
+                      Jam ${p + 1}
+                    </th>`).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                ${state.config.days.map((dayName, dIdx) => {
+                  const maxP = getMaxPeriodForDay(state, dIdx);
+                  return `
+                    <tr>
+                      <td onclick="toggleTeacherFullDay('${editingTeacher.id}', ${dIdx})"
+                        title="Klik untuk meliburkan hari ${dayName} penuh"
+                        class="border border-slate-400 px-2 py-1.5 font-bold text-left bg-slate-100 cursor-pointer hover:bg-rose-200">
+                        ${dayName}
+                      </td>
+                      ${Array.from({ length: periods }, (_, p) => {
+                        if (p >= maxP) {
+                          return `<td class="border border-slate-400 bg-slate-200 text-slate-400">-</td>`;
+                        }
+                        const key = `${dIdx}-${p}`;
+                        const isOff = editingTeacher.timeOff?.[key];
+                        return `
+                          <td onclick="toggleTeacherSlot('${editingTeacher.id}', ${dIdx}, ${p})"
+                            class="border border-slate-400 py-1.5 cursor-pointer font-bold select-none ${
+                              isOff ? 'bg-rose-600 text-white' : 'hover:bg-rose-100 text-emerald-700'
+                            }">
+                            ${isOff ? 'X' : '✓'}
+                          </td>
+                        `;
+                      }).join('')}
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ` : ''}
+
+      <div class="flex gap-2 bg-slate-100 p-2 rounded border max-w-xl">
         <input id="newTeacherName" placeholder="Nama Lengkap Guru & Gelar" class="flex-1 border rounded px-2 py-1 bg-white">
         <input id="newTeacherCode" placeholder="Kode (G01)" class="w-28 border rounded px-2 py-1 bg-white">
         <button onclick="addMasterTeacher()" class="bg-blue-600 text-white px-3 py-1 rounded font-bold">+ Tambah Guru</button>
       </div>
       <table class="w-full border-collapse border border-slate-300">
-        <thead class="bg-slate-200"><tr><th class="border p-1.5 text-left">Nama Guru & Gelar</th><th class="border p-1.5 w-28">Kode</th><th class="border p-1.5 w-20">Aksi</th></tr></thead>
+        <thead class="bg-slate-200">
+          <tr>
+            <th class="border p-1.5 text-left">Nama Guru & Gelar</th>
+            <th class="border p-1.5 w-24">Kode</th>
+            <th class="border p-1.5 w-44">Permintaan Jam Libur</th>
+            <th class="border p-1.5 w-20">Aksi</th>
+          </tr>
+        </thead>
         <tbody>
-          ${state.teachers.map(t => `
-            <tr>
+          ${state.teachers.map(t => {
+            const offCount = Object.keys(t.timeOff || {}).filter(k => t.timeOff[k]).length;
+            return `<tr>
               <td class="border p-1.5"><input value="${t.name}" onchange="editEntityName('teachers','${t.id}',this.value)" class="w-full px-1"></td>
               <td class="border p-1.5 text-center font-bold">${t.code}</td>
+              <td class="border p-1.5 text-center">
+                <button onclick="openTeacherTimeOff('${t.id}')"
+                  class="px-2.5 py-1 rounded font-semibold border ${offCount > 0 ? 'bg-rose-100 border-rose-400 text-rose-800' : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'}">
+                  ${offCount > 0 ? `🚫 ${offCount} Jam Libur` : 'Atur Jam Libur'}
+                </button>
+              </td>
               <td class="border p-1.5 text-center"><button onclick="deleteEntity('teachers','${t.id}')" class="text-rose-600 font-bold hover:underline">Hapus</button></td>
-            </tr>`).join('')}
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>
     `;
@@ -818,6 +946,78 @@ function renderMasterTabContent() {
   }
 }
 
+window.toggleGlobalBlock = (dayIndex, period) => {
+  const key = `${dayIndex}-${period}`;
+  mutate(d => {
+    if (!d.config.globalBlocked) d.config.globalBlocked = {};
+    if (d.config.globalBlocked[key]) {
+      delete d.config.globalBlocked[key];
+    } else {
+      d.config.globalBlocked[key] = dayIndex === 0 && period === 0 ? 'Upacara' : 'Blokir';
+    }
+  });
+  renderMasterTabContent();
+};
+
+window.openTeacherTimeOff = (teacherId) => {
+  editingTeacherTimeOffId = teacherId;
+  renderMasterTabContent();
+};
+
+window.closeTeacherTimeOff = () => {
+  editingTeacherTimeOffId = null;
+  renderMasterTabContent();
+};
+
+window.toggleTeacherSlot = (teacherId, dayIndex, period) => {
+  const key = `${dayIndex}-${period}`;
+  mutate(d => {
+    const t = d.teachers.find(x => x.id === teacherId);
+    if (!t) return;
+    if (!t.timeOff) t.timeOff = {};
+    if (t.timeOff[key]) delete t.timeOff[key];
+    else t.timeOff[key] = true;
+  });
+  renderMasterTabContent();
+};
+
+window.toggleTeacherFullDay = (teacherId, dayIndex) => {
+  mutate(d => {
+    const t = d.teachers.find(x => x.id === teacherId);
+    if (!t) return;
+    if (!t.timeOff) t.timeOff = {};
+    const maxP = getMaxPeriodForDay(d, dayIndex);
+    let anyOpen = false;
+    for (let p = 0; p < maxP; p++) {
+      if (!t.timeOff[`${dayIndex}-${p}`]) anyOpen = true;
+    }
+    for (let p = 0; p < maxP; p++) {
+      if (anyOpen) t.timeOff[`${dayIndex}-${p}`] = true;
+      else delete t.timeOff[`${dayIndex}-${p}`];
+    }
+  });
+  renderMasterTabContent();
+};
+
+window.toggleTeacherPeriodAllDays = (teacherId, period) => {
+  mutate(d => {
+    const t = d.teachers.find(x => x.id === teacherId);
+    if (!t) return;
+    if (!t.timeOff) t.timeOff = {};
+    let anyOpen = false;
+    d.config.days.forEach((_, dIdx) => {
+      if (period < getMaxPeriodForDay(d, dIdx) && !t.timeOff[`${dIdx}-${period}`]) anyOpen = true;
+    });
+    d.config.days.forEach((_, dIdx) => {
+      if (period < getMaxPeriodForDay(d, dIdx)) {
+        if (anyOpen) t.timeOff[`${dIdx}-${period}`] = true;
+        else delete t.timeOff[`${dIdx}-${period}`];
+      }
+    });
+  });
+  renderMasterTabContent();
+};
+
 window.onChangeDaysPreset = () => {
   const count = document.getElementById('mSchoolDaysCount').value;
   mutate(d => {
@@ -831,7 +1031,7 @@ window.onChangeDaysPreset = () => {
 
 window.saveSchoolSettings = () => {
   const daysCount = document.getElementById('mSchoolDaysCount').value;
-  const maxPeriods = parseInt(document.getElementById('mPeriods').value, 10) || 9;
+  const maxPeriods = parseInt(document.getElementById('mPeriods').value, 10) || 10;
   const dayInputs = document.querySelectorAll('.day-max-input');
 
   mutate(d => {
@@ -850,7 +1050,7 @@ window.saveSchoolSettings = () => {
   });
 
   refreshDayFilter();
-  alert('✅ Pengaturan hari & batas jam per hari berhasil disimpan.');
+  alert('✅ Pengaturan hari, batas jam per hari, & blokir upacara berhasil disimpan.');
 };
 
 window.saveMatrixDistribution = () => {
@@ -997,10 +1197,9 @@ window.processUploadedFile = () => {
   if (!file) return alert('Pilih file Excel (.xlsx/.xls), CSV, atau JSON terlebih dahulu.');
   const nameLower = file.name.toLowerCase();
 
-  // A. BACA LANGSUNG FILE EXCEL ASLI (.XLSX / .XLS) — GELAR KOMA DIJAMIN UTUH!
   if (nameLower.endsWith('.xlsx') || nameLower.endsWith('.xls')) {
     if (!window.XLSX) {
-      return alert('Library Excel belum termuat. Silakan muat ulang halaman (Ctrl+Shift+R) atau gunakan Copy-Paste dari Excel.');
+      return alert('Library Excel belum termuat. Silakan muat ulang halaman (Ctrl+Shift+R).');
     }
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -1016,7 +1215,6 @@ window.processUploadedFile = () => {
     return;
   }
 
-  // B. BACA FILE JSON ATAU CSV
   const reader = new FileReader();
   reader.onload = (e) => {
     const text = e.target.result;
@@ -1050,14 +1248,12 @@ function importMatrixRows(rows) {
     return alert('Minimal harus ada 1 baris judul kelas dan 1 baris data guru.');
   }
 
-  // Cari baris header (yang memuat kata Guru / Nama / Mapel)
   let headerRowIdx = rows.findIndex(r =>
     r.some(c => /^(guru|nama\s*guru|pengajar)$/i.test(c))
   );
   if (headerRowIdx === -1) headerRowIdx = 0;
 
   const headers = rows[headerRowIdx];
-  // Auto-deteksi apakah formatnya 3 kolom awal (Guru | Kode | Mapel | Kelas...) atau 2 kolom awal (Guru | Mapel | Kelas...)
   const col2Lower = (headers[1] || '').toLowerCase();
   const hasExplicitCodeCol = col2Lower.includes('kode') || col2Lower.includes('inisial') || col2Lower === '';
   const subjColIdx = hasExplicitCodeCol ? 2 : 1;
@@ -1151,11 +1347,11 @@ function importMatrixRows(rows) {
   });
 
   closeUploadModal();
-  alert(`✅ Berhasil mengimpor!\n• ${state.classes.length} Kelas\n• ${state.subjects.length} Mata Pelajaran\n• ${state.teachers.length} Guru (gelar utuh)\n• ${cardCount} Kartu Pelajaran siap susun.`);
+  alert(`✅ Berhasil mengimpor!\n• ${state.classes.length} Kelas\n• ${state.subjects.length} Mata Pelajaran\n• ${state.teachers.length} Guru\n• ${cardCount} Kartu Pelajaran siap susun.`);
 }
 
 // ============================================================================
-// 6. GENERATOR OTOMATIS, VALIDASI, SIMPAN CLOUD & PUBLISH
+// 6. GENERATOR OTOMATIS (MENGHORMATI UPACARA, JUMAT, & LIBUR GURU)
 // ============================================================================
 window.openGeneratorModal = () => {
   document.getElementById('modalGenerator').classList.remove('hidden');
@@ -1174,15 +1370,27 @@ window.startWorkerGeneration = () => {
 
   const workerState = JSON.parse(JSON.stringify(state));
   workerState.days = workerState.config.days.map((name, idx) => ({ id: `d${idx}`, name }));
+
+  // Terapkan semua blokir sekolah (Upacara, dll) dan batas jam Jumat ke timeOff kelas untuk worker
   workerState.classes.forEach(cls => {
     if (!cls.timeOff) cls.timeOff = {};
     workerState.config.days.forEach((dayName, dIdx) => {
       const maxP = getMaxPeriodForDay(workerState, dIdx);
-      for (let p = maxP; p < workerState.config.periodsPerDay; p++) {
-        cls.timeOff[`${dIdx}-${p}`] = true;
+      for (let p = 0; p < workerState.config.periodsPerDay; p++) {
+        const key = `${dIdx}-${p}`;
+        if (p >= maxP || workerState.config.globalBlocked?.[key]) {
+          cls.timeOff[key] = true;
+        }
       }
     });
   });
+
+  // Jika mode "FRESH", kosongkan posisi kartu yang tidak dikunci sebelum dijalankan
+  if (mode === 'FRESH') {
+    workerState.cards.forEach(c => {
+      if (!c.isLocked) { c.dayIndex = null; c.startPeriod = null; }
+    });
+  }
 
   solverWorker = new Worker('./solver.worker.js', { type: 'module' });
   solverWorker.onmessage = (e) => {
@@ -1195,7 +1403,7 @@ window.startWorkerGeneration = () => {
       closeGeneratorModal();
     }
   };
-  solverWorker.postMessage({ type: 'START', state: workerState, options: { mode, respectLocks: true, maxIterations: 25000 } });
+  solverWorker.postMessage({ type: 'START', state: workerState, options: { mode, respectLocks: true, maxIterations: 30000 } });
 };
 
 function updateConflictRibbon() {
