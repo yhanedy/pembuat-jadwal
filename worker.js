@@ -100,7 +100,43 @@ export default {
 
         return jsonResponse({ ok: true, version: nextVersion }, 200, corsHeaders);
       }
+    // 4. ENDPOINT ASISTEN GEMINI AI (POST /api/ai/chat)
+    if (parts[0] === 'api' && parts[1] === 'ai' && parts[2] === 'chat' && request.method === 'POST') {
+      try {
+        const body = await request.json();
+        const userPrompt = body.prompt;
 
+        if (!userPrompt) {
+          return jsonResponse({ error: 'Prompt tidak boleh kosong.' }, 400, corsHeaders);
+        }
+
+        // Panggil API Gemini (menggunakan Secret GEMINI_API_KEY Anda)
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${env.GEMINI_API_KEY}`;
+        
+        const aiResponse = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: userPrompt }] }],
+            systemInstruction: {
+              parts: [{ text: "Anda adalah asisten pembuat jadwal sekolah. Jawablah dengan singkat, jelas, dan dalam bahasa Indonesia." }]
+            }
+          })
+        });
+
+        if (!aiResponse.ok) {
+          const errText = await aiResponse.text();
+          throw new Error(`Gemini API Error: ${aiResponse.status} - ${errText}`);
+        }
+
+        const aiData = await aiResponse.json();
+        const replyText = aiData.candidates?.[0]?.content?.parts?.[0]?.text || 'Maaf, AI tidak memberikan jawaban yang valid.';
+
+        return jsonResponse({ reply: replyText }, 200, corsHeaders);
+      } catch (err) {
+        return jsonResponse({ error: 'AI Error: ' + err.message }, 500, corsHeaders);
+      }
+    }
       // C. PUBLISH JADWAL KE SISWA
       if (action === 'publish' && request.method === 'POST') {
         const payload = await request.json();
