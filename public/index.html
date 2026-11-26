@@ -227,6 +227,45 @@
       panel.style.display = 'none';
     }
   };
+  window.sendAiCommand = async function() {
+  const input = document.getElementById('aiPromptInput');
+  const log = document.getElementById('aiChatLog');
+  const prompt = input.value.trim();
+  if (!prompt) return;
+
+  // 1. Tampilkan pesan user ke layar
+  log.innerHTML += `<div class="bg-slate-200 text-slate-800 p-2.5 rounded-lg ml-6">${prompt}</div>`;
+  input.value = '';
+  log.scrollTop = log.scrollHeight;
+
+  // 2. Tampilkan indikator loading
+  const loadingId = 'loading_' + Date.now();
+  log.innerHTML += `<div id="${loadingId}" class="text-slate-500 italic p-2">AI sedang berpikir...</div>`;
+  log.scrollTop = log.scrollHeight;
+
+  try {
+    // 3. Panggil API (Ganti URL ini dengan Worker AI Anda, atau gunakan API Gemini langsung)
+    // Contoh memanggil Cloudflare Worker:
+    const response = await fetch('https://pembuat-jadwal.yhanedy.workers.dev/api/ai/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: prompt })
+    });
+    
+    if (!response.ok) throw new Error('Gagal menghubungi server AI');
+    const data = await response.json();
+
+    // 4. Tampilkan jawaban AI
+    document.getElementById(loadingId).remove();
+    log.innerHTML += `<div class="bg-blue-100 text-blue-950 p-2.5 rounded-lg mr-6">${data.reply}</div>`;
+    log.scrollTop = log.scrollHeight;
+
+  } catch (error) {
+    document.getElementById(loadingId).remove();
+    log.innerHTML += `<div class="bg-rose-100 text-rose-800 p-2.5 rounded-lg mr-6">Error: ${error.message}</div>`;
+    log.scrollTop = log.scrollHeight;
+  }
+};
 </script>
   <!-- 5. DOCK KARTU BAWAH (UNPLACED CARDS STRIP KHAS aSc TIMETABLES) -->
   <section class="h-28 bg-slate-100 border-t-2 border-slate-400 flex flex-col shrink-0 no-print">
