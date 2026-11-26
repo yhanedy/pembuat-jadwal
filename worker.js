@@ -48,7 +48,46 @@ export default {
       return jsonResponse({ error: 'Jadwal publik belum dipublikasikan oleh guru/admin.' }, 404, corsHeaders);
     }
 
-    // 3. ENDPOINT ADMIN TERPROTEKSI LOGIN GMAIL (/api/admin/:schoolId/...)
+    // 3. ENDPOINT ASISTEN GEMINI AI (POST /api/ai/chat) -> KITA TARUH DI SINI
+    if (parts[0] === 'api' && parts[1] === 'ai' && parts[2] === 'chat' && request.method === 'POST') {
+      try {
+        const body = await request.json();
+        const userPrompt = body.prompt;
+
+        if (!userPrompt) {
+          return jsonResponse({ error: 'Prompt tidak boleh kosong.' }, 400, corsHeaders);
+        }
+
+        // Panggil API Gemini (menggunakan Secret GEMINI_API_KEY Anda)
+        // Gunakan model gemini-pro atau gemini-1.5-flash sesuai kuota API Key Anda
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${env.GEMINI_API_KEY}`;
+        
+        const aiResponse = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: userPrompt }] }],
+            systemInstruction: {
+              parts: [{ text: "Anda adalah asisten pembuat jadwal sekolah. Jawablah dengan singkat, jelas, dan dalam bahasa Indonesia." }]
+            }
+          })
+        });
+
+        if (!aiResponse.ok) {
+          const errText = await aiResponse.text();
+          throw new Error(`Gemini API Error: ${aiResponse.status} - ${errText}`);
+        }
+
+        const aiData = await aiResponse.json();
+        const replyText = aiData.candidates?.[0]?.content?.parts?.[0]?.text || 'Maaf, AI tidak memberikan jawaban yang valid.';
+
+        return jsonResponse({ reply: replyText }, 200, corsHeaders);
+      } catch (err) {
+        return jsonResponse({ error: 'AI Error: ' + err.message }, 500, corsHeaders);
+      }
+    }
+
+    // 4. ENDPOINT ADMIN TERPROTEKSI LOGIN GMAIL (/api/admin/:schoolId/...)
     if (parts[0] === 'api' && parts[1] === 'admin' && parts[2]) {
       const schoolId = parts[2];
       const action = parts[3];
@@ -58,7 +97,6 @@ export default {
         return jsonResponse({ error: 'Silakan login dengan akun Gmail Anda terlebih dahulu.' }, 401, corsHeaders);
       }
 
-      // Isolasi Multi-Sekolah: Setiap akun Gmail hanya bisa mengakses sch_<uid> miliknya sendiri
       const expectedOwnerId = `sch_${authUser.uid}`;
       if (schoolId !== expectedOwnerId) {
         return jsonResponse({ error: 'Akses ditolak: Anda hanya dapat mengelola jadwal milik akun Gmail Anda.' }, 403, corsHeaders);
@@ -100,43 +138,7 @@ export default {
 
         return jsonResponse({ ok: true, version: nextVersion }, 200, corsHeaders);
       }
-    // 4. ENDPOINT ASISTEN GEMINI AI (POST /api/ai/chat)
-    if (parts[0] === 'api' && parts[1] === 'ai' && parts[2] === 'chat' && request.method === 'POST') {
-      try {
-        const body = await request.json();
-        const userPrompt = body.prompt;
 
-        if (!userPrompt) {
-          return jsonResponse({ error: 'Prompt tidak boleh kosong.' }, 400, corsHeaders);
-        }
-
-        // Panggil API Gemini (menggunakan Secret GEMINI_API_KEY Anda)
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${env.GEMINI_API_KEY}`;
-        
-        const aiResponse = await fetch(geminiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: userPrompt }] }],
-            systemInstruction: {
-              parts: [{ text: "Anda adalah asisten pembuat jadwal sekolah. Jawablah dengan singkat, jelas, dan dalam bahasa Indonesia." }]
-            }
-          })
-        });
-
-        if (!aiResponse.ok) {
-          const errText = await aiResponse.text();
-          throw new Error(`Gemini API Error: ${aiResponse.status} - ${errText}`);
-        }
-
-        const aiData = await aiResponse.json();
-        const replyText = aiData.candidates?.[0]?.content?.parts?.[0]?.text || 'Maaf, AI tidak memberikan jawaban yang valid.';
-
-        return jsonResponse({ reply: replyText }, 200, corsHeaders);
-      } catch (err) {
-        return jsonResponse({ error: 'AI Error: ' + err.message }, 500, corsHeaders);
-      }
-    }
       // C. PUBLISH JADWAL KE SISWA
       if (action === 'publish' && request.method === 'POST') {
         const payload = await request.json();
@@ -156,6 +158,7 @@ export default {
       }
     }
 
+    // FALLBACK RESPONSE
     return jsonResponse({ status: 'aSc Web TimeTables API Ready' }, 200, corsHeaders);
   }
 };
@@ -166,4 +169,23 @@ async function verifyFirebaseUser(request) {
   const token = authHeader.slice(7);
 
   try {
-    const { payload } =
+    const { payload } = await jwtVerify(token, FIREBASE_JWKS, {
+      issuer: `https://securetoken.google.com/${FIREBASE_PROJECT_ID}`,
+      audience: FIREBASE_PROJECT_ID,
+    });
+    return payload;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Fungsi bantuan untuk membuat respons JSON
+function jsonResponse(data, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(data), {
+    status: status,
+    headers: {
+      'Content-Type': 'application/json',
+      ...extraHeaders
+    }
+  });
+}
