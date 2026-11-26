@@ -227,10 +227,12 @@
       panel.style.display = 'none';
     }
   };
-  window.sendAiCommand = async function() {
+ window.sendAiCommand = async function() {
   const input = document.getElementById('aiPromptInput');
   const log = document.getElementById('aiChatLog');
+  const btnSend = document.getElementById('btnSendAi');
   const prompt = input.value.trim();
+  
   if (!prompt) return;
 
   // 1. Tampilkan pesan user ke layar
@@ -238,35 +240,59 @@
   input.value = '';
   log.scrollTop = log.scrollHeight;
 
-  // 2. Tampilkan indikator loading
+  // 2. Tampilkan indikator loading & nonaktifkan tombol
   const loadingId = 'loading_' + Date.now();
-  log.innerHTML += `<div id="${loadingId}" class="text-slate-500 italic p-2">AI sedang berpikir...</div>`;
+  log.innerHTML += `<div id="${loadingId}" class="text-slate-500 italic p-2 text-xs">AI sedang berpikir...</div>`;
   log.scrollTop = log.scrollHeight;
+  btnSend.disabled = true;
+  btnSend.classList.add('opacity-50');
 
   try {
-    // 3. Panggil API (Ganti URL ini dengan Worker AI Anda, atau gunakan API Gemini langsung)
-    // Contoh memanggil Cloudflare Worker:
+    // 3. Panggil API Cloudflare Worker Anda
     const response = await fetch('https://pembuat-jadwal.yhanedy.workers.dev/api/ai/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: prompt })
     });
     
-    if (!response.ok) throw new Error('Gagal menghubungi server AI');
-    const data = await response.json();
+    // Cek jika server mengembalikan status error (400, 500, dll)
+    if (!response.ok) {
+      throw new Error(`Server Error: ${response.status}`);
+    }
 
-    // 4. Tampilkan jawaban AI
+    // 4. Baca respons JSON
+    const data = await response.json();
+    console.log("Data dari Worker:", data); // Cek di F12 Console
+
     document.getElementById(loadingId).remove();
-    log.innerHTML += `<div class="bg-blue-100 text-blue-950 p-2.5 rounded-lg mr-6">${data.reply}</div>`;
-    log.scrollTop = log.scrollHeight;
+
+    // 5. Tampilkan jawaban AI (dengan pengecekan anti-undefined)
+    let textBalasan = 'Maaf, AI tidak memberikan jawaban yang valid.';
+    
+    if (typeof data === 'string') {
+      textBalasan = data;
+    } else if (data && data.reply) {
+      textBalasan = data.reply;
+    } else if (data && data.error) {
+      textBalasan = `⚠️ ${data.error}`;
+    } else if (data && data.candidates && data.candidates[0]?.content?.parts[0]?.text) {
+      // Jika Worker tidak sengaja mengirim balasan mentah dari Google
+      textBalasan = data.candidates[0].content.parts[0].text;
+    }
+
+    log.innerHTML += `<div class="bg-blue-100 text-blue-950 p-2.5 rounded-lg mr-6">${textBalasan}</div>`;
 
   } catch (error) {
-    document.getElementById(loadingId).remove();
-    log.innerHTML += `<div class="bg-rose-100 text-rose-800 p-2.5 rounded-lg mr-6">Error: ${error.message}</div>`;
+    // Tampilkan error koneksi atau error dari langkah di atas
+    if (document.getElementById(loadingId)) document.getElementById(loadingId).remove();
+    log.innerHTML += `<div class="bg-rose-100 text-rose-800 p-2.5 rounded-lg mr-6">⚠️ Error: ${error.message}</div>`;
+  } finally {
+    // Aktifkan kembali tombol kirim apapun yang terjadi
+    btnSend.disabled = false;
+    btnSend.classList.remove('opacity-50');
     log.scrollTop = log.scrollHeight;
   }
-};
-</script>
+};</script>
   <!-- 5. DOCK KARTU BAWAH (UNPLACED CARDS STRIP KHAS aSc TIMETABLES) -->
   <section class="h-28 bg-slate-100 border-t-2 border-slate-400 flex flex-col shrink-0 no-print">
     <div class="bg-slate-200 px-3 py-1 border-b border-slate-300 flex items-center justify-between">
