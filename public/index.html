@@ -235,29 +235,30 @@ window.sendAiCommand = async function() {
   
   if (!prompt) return;
 
-  // 1. Tampilkan pesan user ke layar
+  // Cek apakah data sekolah sudah termuat
+  if (!window.state) {
+    log.innerHTML += `<div class="bg-rose-100 text-rose-800 p-2.5 rounded-lg mr-6">⚠️ Data jadwal belum siap. Tunggu sebentar atau muat ulang halaman.</div>`;
+    return;
+  }
+
   log.innerHTML += `<div class="bg-slate-200 text-slate-800 p-2.5 rounded-lg ml-6">${prompt}</div>`;
   input.value = '';
   log.scrollTop = log.scrollHeight;
 
-  // 2. Tampilkan indikator loading
   const loadingId = 'loading_' + Date.now();
-  log.innerHTML += `<div id="${loadingId}" class="text-slate-500 italic p-2 text-xs">AI sedang memproses perintah...</div>`;
+  log.innerHTML += `<div id="${loadingId}" class="text-slate-500 italic p-2 text-xs">AI sedang memproses...</div>`;
   log.scrollTop = log.scrollHeight;
   btnSend.disabled = true;
   btnSend.classList.add('opacity-50');
 
   try {
-    // 3. Siapkan konteks data sekolah untuk dikirim ke AI
-    // (Pastikan variabel `state` ini tersedia secara global di app.js)
     const context = {
-      days: state.config.days,
-      periodsPerDay: state.config.periodsPerDay,
-      teachers: state.teachers.map(t => ({ id: t.id, name: t.name, code: t.code })),
-      subjects: state.subjects.map(s => ({ id: s.id, name: s.name }))
+      days: window.state.config.days,
+      periodsPerDay: window.state.config.periodsPerDay,
+      teachers: window.state.teachers.map(t => ({ id: t.id, name: t.name, code: t.code })),
+      subjects: window.state.subjects.map(s => ({ id: s.id, name: s.name }))
     };
 
-    // 4. Panggil API Cloudflare Worker Anda (Perhatikan URL-nya: /api/ai-command)
     const response = await fetch('https://pembuat-jadwal.yhanedy.workers.dev/api/ai-command', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -266,23 +267,21 @@ window.sendAiCommand = async function() {
     
     if (!response.ok) throw new Error(`Server Error: ${response.status}`);
 
-    // 5. Baca respons JSON dari Gemini
     const data = await response.json();
-    console.log("Data dari AI:", data); 
     document.getElementById(loadingId).remove();
 
-    // Tampilkan balasan teks dari AI
     log.innerHTML += `<div class="bg-blue-100 text-blue-950 p-2.5 rounded-lg mr-6">${data.reply || 'Perintah diproses.'}</div>`;
 
-    // 6. EKSEKUSI AKSI AI (Opsional, Jika AI meminta untuk memblokir jam, dll)
     if (data.actions && data.actions.length > 0) {
       let aksiTerlaksana = [];
       
+      // Gunakan window.mutate jika ada, atau panggil fungsi mutate Anda
+      const executeMutate = window.mutate || mutate; 
+
       data.actions.forEach(action => {
         if (action.type === 'SET_GLOBAL_BLOCK') {
-          // Logika untuk memblokir jam sekolah
           const key = `${action.dayIndex}-${action.periodIndexes[0]}`;
-          mutate(d => { 
+          executeMutate(d => { 
             if(!d.config.globalBlocked) d.config.globalBlocked = {};
             d.config.globalBlocked[key] = action.label || 'Blokir AI'; 
           });
@@ -290,11 +289,10 @@ window.sendAiCommand = async function() {
         }
         
         if (action.type === 'SET_TEACHER_TIMEOFF') {
-          // Logika untuk meliburkan guru
           action.teacherIds.forEach(tid => {
             action.periodIndexes.forEach(p => {
               const key = `${action.dayIndex}-${p}`;
-              mutate(d => {
+              executeMutate(d => {
                 const t = d.teachers.find(x => x.id === tid);
                 if (t) { if(!t.timeOff) t.timeOff = {}; t.timeOff[key] = true; }
               });
@@ -302,13 +300,11 @@ window.sendAiCommand = async function() {
           });
           aksiTerlaksana.push("Mengatur jam libur guru.");
         }
-
-        // (Anda bisa menambahkan logika untuk 'RUN_GENERATE' atau 'SET_DAY_MAX_PERIOD' di sini)
       });
 
       if (aksiTerlaksana.length > 0) {
         log.innerHTML += `<div class="text-emerald-600 text-[10px] italic p-1 ml-2">✓ ${aksiTerlaksana.join(' ')}</div>`;
-        renderGrid(); // Segarkan tampilan grid
+        if (window.renderGrid) window.renderGrid(); // Refresh grid
       }
     }
 
