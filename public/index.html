@@ -227,106 +227,103 @@
       panel.style.display = 'none';
     }
   };
-window.sendAiCommand = async function() {
-  const input = document.getElementById('aiPromptInput');
-  const log = document.getElementById('aiChatLog');
-  const btnSend = document.getElementById('btnSendAi');
-  const prompt = input.value.trim();
-  
-  if (!prompt) return;
 
-  if (!window.state) {
-    log.innerHTML += `<div class="bg-rose-100 text-rose-800 p-2.5 rounded-lg mr-6">⚠️ Data jadwal belum siap.</div>`;
-    return;
-  }
-
-  // 1. Tampilkan pesan user
-  log.innerHTML += `<div class="bg-slate-200 text-slate-800 p-2.5 rounded-lg ml-6">${prompt}</div>`;
-  input.value = '';
-  log.scrollTop = log.scrollHeight;
-
-  // 2. Tampilkan Loading
-  const loadingId = 'loading_' + Date.now();
-  log.innerHTML += `<div id="${loadingId}" class="text-slate-500 italic p-2 text-xs">AI sedang memproses...</div>`;
-  log.scrollTop = log.scrollHeight;
-  btnSend.disabled = true;
-  btnSend.classList.add('opacity-50');
-
-  try {
-    const context = {
-      days: window.state.config.days,
-      periodsPerDay: window.state.config.periodsPerDay,
-      teachers: window.state.teachers.map(t => ({ id: t.id, name: t.name, code: t.code })),
-      subjects: window.state.subjects.map(s => ({ id: s.id, name: s.name }))
-    };
-
-    const response = await fetch('https://pembuat-jadwal.yhanedy.workers.dev/api/ai-command', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: prompt, context: context })
-    });
+  window.sendAiCommand = async function() {
+    const input = document.getElementById('aiPromptInput');
+    const log = document.getElementById('aiChatLog');
+    const btnSend = document.getElementById('btnSendAi');
+    const prompt = input.value.trim();
     
-    const data = await response.json();
-    
-    // TAMPILKAN DATA ASLI DI CONSOLE UNTUK DEBUGGING
-    console.log("Data Mentah dari AI:", data);
+    if (!prompt) return;
 
-    document.getElementById(loadingId).remove();
-
-    // Baca teks balasan dengan aman
-    let teksBalasan = "Maaf, format balasan tidak dikenali.";
-    if (typeof data === 'object' && data !== null) {
-      if (data.reply) teksBalasan = data.reply;
-      else if (data.error) teksBalasan = "⚠️ " + data.error;
-    } else if (typeof data === 'string') {
-      teksBalasan = data;
+    if (!window.state) {
+      log.innerHTML += `<div class="bg-rose-100 text-rose-800 p-2.5 rounded-lg mr-6">⚠️ Data jadwal belum siap.</div>`;
+      return;
     }
 
-    log.innerHTML += `<div class="bg-blue-100 text-blue-950 p-2.5 rounded-lg mr-6">${teksBalasan}</div>`;
+    // 1. Tampilkan pesan user
+    log.innerHTML += `<div class="bg-slate-200 text-slate-800 p-2.5 rounded-lg ml-6">${prompt}</div>`;
+    input.value = '';
+    log.scrollTop = log.scrollHeight;
 
-    // Eksekusi aksi jika ada
-    if (data.actions && data.actions.length > 0 && window.mutate) {
-      let aksiTerlaksana = [];
-      data.actions.forEach(action => {
-        if (action.type === 'SET_GLOBAL_BLOCK') {
-          const key = `${action.dayIndex}-${action.periodIndexes[0]}`;
-          window.mutate(d => { 
-            if(!d.config.globalBlocked) d.config.globalBlocked = {};
-            d.config.globalBlocked[key] = action.label || 'Blokir AI'; 
-          });
-          aksiTerlaksana.push("Memblokir jam sekolah.");
-        }
-        if (action.type === 'SET_TEACHER_TIMEOFF') {
-          action.teacherIds.forEach(tid => {
-            action.periodIndexes.forEach(p => {
-              const key = `${action.dayIndex}-${p}`;
-              window.mutate(d => {
-                const t = d.teachers.find(x => x.id === tid);
-                if (t) { if(!t.timeOff) t.timeOff = {}; t.timeOff[key] = true; }
+    // 2. Tampilkan Loading
+    const loadingId = 'loading_' + Date.now();
+    log.innerHTML += `<div id="${loadingId}" class="text-slate-500 italic p-2 text-xs">AI sedang memproses...</div>`;
+    log.scrollTop = log.scrollHeight;
+    btnSend.disabled = true;
+    btnSend.classList.add('opacity-50');
+
+    try {
+      const context = {
+        days: window.state.config.days,
+        periodsPerDay: window.state.config.periodsPerDay,
+        teachers: window.state.teachers.map(t => ({ id: t.id, name: t.name, code: t.code })),
+        subjects: window.state.subjects.map(s => ({ id: s.id, name: s.name }))
+      };
+
+      const response = await fetch('https://pembuat-jadwal.yhanedy.workers.dev/api/ai-command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: prompt, context: context })
+      });
+      
+      const data = await response.json();
+      
+      console.log("Data Mentah dari AI:", data);
+      document.getElementById(loadingId).remove();
+
+      let teksBalasan = "Maaf, format balasan tidak dikenali.";
+      if (typeof data === 'object' && data !== null) {
+        if (data.reply) teksBalasan = data.reply;
+        else if (data.error) teksBalasan = "⚠️ " + data.error;
+      } else if (typeof data === 'string') {
+        teksBalasan = data;
+      }
+
+      log.innerHTML += `<div class="bg-blue-100 text-blue-950 p-2.5 rounded-lg mr-6">${teksBalasan}</div>`;
+
+      // Eksekusi aksi
+      if (data.actions && data.actions.length > 0 && window.mutate) {
+        let aksiTerlaksana = [];
+        data.actions.forEach(action => {
+          if (action.type === 'SET_GLOBAL_BLOCK') {
+            const key = `${action.dayIndex}-${action.periodIndexes[0]}`;
+            window.mutate(d => { 
+              if(!d.config.globalBlocked) d.config.globalBlocked = {};
+              d.config.globalBlocked[key] = action.label || 'Blokir AI'; 
+            });
+            aksiTerlaksana.push("Memblokir jam sekolah.");
+          }
+          if (action.type === 'SET_TEACHER_TIMEOFF') {
+            action.teacherIds.forEach(tid => {
+              action.periodIndexes.forEach(p => {
+                const key = `${action.dayIndex}-${p}`;
+                window.mutate(d => {
+                  const t = d.teachers.find(x => x.id === tid);
+                  if (t) { if(!t.timeOff) t.timeOff = {}; t.timeOff[key] = true; }
+                });
               });
             });
-          });
-          aksiTerlaksana.push("Mengatur jam libur guru.");
+            aksiTerlaksana.push("Mengatur jam libur guru.");
+          }
+        });
+
+        if (aksiTerlaksana.length > 0) {
+          log.innerHTML += `<div class="text-emerald-600 text-[10px] italic p-1 ml-2">✓ ${aksiTerlaksana.join(' ')}</div>`;
+          if (window.renderGrid) window.renderGrid();
         }
-      });
-
-      if (aksiTerlaksana.length > 0) {
-        log.innerHTML += `<div class="text-emerald-600 text-[10px] italic p-1 ml-2">✓ ${aksiTerlaksana.join(' ')}</div>`;
-        if (window.renderGrid) window.renderGrid();
       }
+
+    } catch (error) {
+      if (document.getElementById(loadingId)) document.getElementById(loadingId).remove();
+      log.innerHTML += `<div class="bg-rose-100 text-rose-800 p-2.5 rounded-lg mr-6">⚠️ Error: ${error.message}</div>`;
+      console.error("Error di frontend:", error);
+    } finally {
+      btnSend.disabled = false;
+      btnSend.classList.remove('opacity-50');
+      log.scrollTop = log.scrollHeight;
     }
-
-  } catch (error) {
-    if (document.getElementById(loadingId)) document.getElementById(loadingId).remove();
-    log.innerHTML += `<div class="bg-rose-100 text-rose-800 p-2.5 rounded-lg mr-6">⚠️ Error: ${error.message}</div>`;
-    console.error("Error di frontend:", error);
-  } finally {
-    btnSend.disabled = false;
-    btnSend.classList.remove('opacity-50');
-    log.scrollTop = log.scrollHeight;
-  }
-};      
-
+  };
 </script>
   <!-- 5. DOCK KARTU BAWAH (UNPLACED CARDS STRIP KHAS aSc TIMETABLES) -->
   <section class="h-28 bg-slate-100 border-t-2 border-slate-400 flex flex-col shrink-0 no-print">
