@@ -235,16 +235,17 @@ window.sendAiCommand = async function() {
   
   if (!prompt) return;
 
-  // Cek apakah data sekolah sudah termuat
   if (!window.state) {
-    log.innerHTML += `<div class="bg-rose-100 text-rose-800 p-2.5 rounded-lg mr-6">⚠️ Data jadwal belum siap. Tunggu sebentar atau muat ulang halaman.</div>`;
+    log.innerHTML += `<div class="bg-rose-100 text-rose-800 p-2.5 rounded-lg mr-6">⚠️ Data jadwal belum siap.</div>`;
     return;
   }
 
+  // 1. Tampilkan pesan user
   log.innerHTML += `<div class="bg-slate-200 text-slate-800 p-2.5 rounded-lg ml-6">${prompt}</div>`;
   input.value = '';
   log.scrollTop = log.scrollHeight;
 
+  // 2. Tampilkan Loading
   const loadingId = 'loading_' + Date.now();
   log.innerHTML += `<div id="${loadingId}" class="text-slate-500 italic p-2 text-xs">AI sedang memproses...</div>`;
   log.scrollTop = log.scrollHeight;
@@ -265,16 +266,66 @@ window.sendAiCommand = async function() {
       body: JSON.stringify({ prompt: prompt, context: context })
     });
     
-    if (!response.ok) throw new Error(`Server Error: ${response.status}`);
-
     const data = await response.json();
+    
+    // TAMPILKAN DATA ASLI DI CONSOLE UNTUK DEBUGGING
+    console.log("Data Mentah dari AI:", data);
+
     document.getElementById(loadingId).remove();
 
-    log.innerHTML += `<div class="bg-blue-100 text-blue-950 p-2.5 rounded-lg mr-6">${data.reply || 'Perintah diproses.'}</div>`;
+    // Baca teks balasan dengan aman
+    let teksBalasan = "Maaf, format balasan tidak dikenali.";
+    if (typeof data === 'object' && data !== null) {
+      if (data.reply) teksBalasan = data.reply;
+      else if (data.error) teksBalasan = "⚠️ " + data.error;
+    } else if (typeof data === 'string') {
+      teksBalasan = data;
+    }
 
-    if (data.actions && data.actions.length > 0) {
+    log.innerHTML += `<div class="bg-blue-100 text-blue-950 p-2.5 rounded-lg mr-6">${teksBalasan}</div>`;
+
+    // Eksekusi aksi jika ada
+    if (data.actions && data.actions.length > 0 && window.mutate) {
       let aksiTerlaksana = [];
-      
+      data.actions.forEach(action => {
+        if (action.type === 'SET_GLOBAL_BLOCK') {
+          const key = `${action.dayIndex}-${action.periodIndexes[0]}`;
+          window.mutate(d => { 
+            if(!d.config.globalBlocked) d.config.globalBlocked = {};
+            d.config.globalBlocked[key] = action.label || 'Blokir AI'; 
+          });
+          aksiTerlaksana.push("Memblokir jam sekolah.");
+        }
+        if (action.type === 'SET_TEACHER_TIMEOFF') {
+          action.teacherIds.forEach(tid => {
+            action.periodIndexes.forEach(p => {
+              const key = `${action.dayIndex}-${p}`;
+              window.mutate(d => {
+                const t = d.teachers.find(x => x.id === tid);
+                if (t) { if(!t.timeOff) t.timeOff = {}; t.timeOff[key] = true; }
+              });
+            });
+          });
+          aksiTerlaksana.push("Mengatur jam libur guru.");
+        }
+      });
+
+      if (aksiTerlaksana.length > 0) {
+        log.innerHTML += `<div class="text-emerald-600 text-[10px] italic p-1 ml-2">✓ ${aksiTerlaksana.join(' ')}</div>`;
+        if (window.renderGrid) window.renderGrid();
+      }
+    }
+
+  } catch (error) {
+    if (document.getElementById(loadingId)) document.getElementById(loadingId).remove();
+    log.innerHTML += `<div class="bg-rose-100 text-rose-800 p-2.5 rounded-lg mr-6">⚠️ Error: ${error.message}</div>`;
+    console.error("Error di frontend:", error);
+  } finally {
+    btnSend.disabled = false;
+    btnSend.classList.remove('opacity-50');
+    log.scrollTop = log.scrollHeight;
+  }
+};      
       // Gunakan window.mutate jika ada, atau panggil fungsi mutate Anda
       const executeMutate = window.mutate || mutate; 
 
