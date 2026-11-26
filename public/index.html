@@ -326,48 +326,7 @@ window.sendAiCommand = async function() {
     log.scrollTop = log.scrollHeight;
   }
 };      
-      // Gunakan window.mutate jika ada, atau panggil fungsi mutate Anda
-      const executeMutate = window.mutate || mutate; 
 
-      data.actions.forEach(action => {
-        if (action.type === 'SET_GLOBAL_BLOCK') {
-          const key = `${action.dayIndex}-${action.periodIndexes[0]}`;
-          executeMutate(d => { 
-            if(!d.config.globalBlocked) d.config.globalBlocked = {};
-            d.config.globalBlocked[key] = action.label || 'Blokir AI'; 
-          });
-          aksiTerlaksana.push("Memblokir jam sekolah.");
-        }
-        
-        if (action.type === 'SET_TEACHER_TIMEOFF') {
-          action.teacherIds.forEach(tid => {
-            action.periodIndexes.forEach(p => {
-              const key = `${action.dayIndex}-${p}`;
-              executeMutate(d => {
-                const t = d.teachers.find(x => x.id === tid);
-                if (t) { if(!t.timeOff) t.timeOff = {}; t.timeOff[key] = true; }
-              });
-            });
-          });
-          aksiTerlaksana.push("Mengatur jam libur guru.");
-        }
-      });
-
-      if (aksiTerlaksana.length > 0) {
-        log.innerHTML += `<div class="text-emerald-600 text-[10px] italic p-1 ml-2">✓ ${aksiTerlaksana.join(' ')}</div>`;
-        if (window.renderGrid) window.renderGrid(); // Refresh grid
-      }
-    }
-
-  } catch (error) {
-    if (document.getElementById(loadingId)) document.getElementById(loadingId).remove();
-    log.innerHTML += `<div class="bg-rose-100 text-rose-800 p-2.5 rounded-lg mr-6">⚠️ Error: ${error.message}</div>`;
-  } finally {
-    btnSend.disabled = false;
-    btnSend.classList.remove('opacity-50');
-    log.scrollTop = log.scrollHeight;
-  }
-};
 </script>
   <!-- 5. DOCK KARTU BAWAH (UNPLACED CARDS STRIP KHAS aSc TIMETABLES) -->
   <section class="h-28 bg-slate-100 border-t-2 border-slate-400 flex flex-col shrink-0 no-print">
