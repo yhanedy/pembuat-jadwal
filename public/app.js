@@ -295,6 +295,7 @@ onAuthStateChanged(auth, async (user) => {
     const cloudData = await res.json();
     if (cloudData && !cloudData.empty && cloudData.state) {
       state = cloudData.state;
+      window.state = state; // <-- TAMBAHKAN INI (Agar AI bisa baca data dari Cloud)
       serverVersion = cloudData.version || 1;
       state.config.schoolId = userSchoolId;
       normalizeStateConfig(state);
@@ -307,10 +308,12 @@ onAuthStateChanged(auth, async (user) => {
   const saved = loadLocalSnapshot(userSchoolId);
   if (saved?.state) {
     state = saved.state;
+    window.state = state; // <-- TAMBAHKAN INI (Agar AI bisa baca data dari LocalStorage)
     serverVersion = saved.serverVersion || 0;
   } else {
     state = JSON.parse(JSON.stringify(DEFAULT_STATE));
     state.config.schoolId = userSchoolId;
+    window.state = state; // <-- TAMBAHKAN INI (Agar AI bisa baca data default)
   }
 
   normalizeStateConfig(state);
