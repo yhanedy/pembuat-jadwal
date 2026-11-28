@@ -1271,108 +1271,213 @@ window.processPastedExcel = () => {
 
 function importMatrixRows(rows) {
   if (!rows || rows.length < 2) {
-    return alert('Minimal harus ada 1 baris judul kelas dan 1 baris data guru.');
+    return alert('❌ Minimal 1 baris judul + 1 baris data.');
   }
 
+  // Cari baris judul: baris pertama yang mengandung "guru" atau "kelas" atau "mapel"
   let headerRowIdx = rows.findIndex(r =>
-    r.some(c => /^(guru|nama\s*guru|pengajar)$/i.test(c))
+    r.some(c => /^(guru|nama\s*guru|pengajar|kelas|class|mapel|mata\s*pelajaran)$/i.test(String(c || '').trim()))
   );
   if (headerRowIdx === -1) headerRowIdx = 0;
 
-  const headers = rows[headerRowIdx];
-  const col2Lower = (headers[1] || '').toLowerCase();
-  const hasExplicitCodeCol = col2Lower.includes('kode') || col2Lower.includes('inisial') || col2Lower === '';
-  const subjColIdx = hasExplicitCodeCol ? 2 : 1;
-  const classStartIdx = subjColIdx + 1;
+  const headerRow = rows[headerRowIdx].map(c => String(c || '').trim());
+  const dataRows = rows.slice(headerRowIdx + 1).filter(r => r.some(c => String(c || '').trim() !== ''));
 
-  const classNames = headers.slice(classStartIdx).filter(Boolean);
-  if (classNames.length === 0) {
-    return alert('Judul kolom kelas tidak ditemukan. Pastikan baris pertama berisi: Guru | Kode | Mapel | X1 | X2 | ...');
+  const format = detectImportFormat(headerRow);
+  if (format === 'UNKNOWN') {
+    return alert(
+      '❌ Format kolom tidak dikenali.\n\n' +
+      'Format A (MATRIKS): Guru | Kode | Mapel | X1 | X2 | X3 ...\n' +
+      'Format B (LONG)   : Guru | Kode | Mapel | Kelas | JamPerPertemuan | Pertemuan | Ruang'
+    );
   }
 
-  const replaceAll = confirm(
-    `Terbaca ${classNames.length} kelas (${classNames.slice(0, 6).join(', ')}...) dan ${rows.length - headerRowIdx - 1} baris data.\n\n` +
-    `Klik OK untuk MENGGANTI BERSIH seluruh kelas, mapel, guru & jadwal lama dengan data baru ini.\n` +
-    `Klik Batal untuk menambahkan ke data yang sudah ada.`
-  );
+  // ---- Hasil parsing sementara ----
+  const newSubjects = new Map();  // code → { name, category }
+  const newTeachers = new Map();  // code → { name }
+  const newClasses  = new Set();
+  const distribution = [];        // { teacherCode, subjectCode, classId, hours }
 
-  let cardCount = 0;
+  if (format === 'MATRIX') {
+    // --- FORMAT MATRIKS: baris guru, kolom kelas, isi = total jam ---
+    const iGuru    = findColIndex(headerRow, ['guru', 'nama guru', 'pengajar', 'teacher']);
+    const iKode    = findColIndex(headerRow, ['kode', 'kode guru', 'code']);
+    const iMapel   = findColIndex(headerRow, ['mapel', 'mata pelajaran', 'subject']);
+    const iKodeMapel = findColIndex(headerRow, ['kode mapel', 'kode mapel/subject']);
+    const iKategori = findColIndex(headerRow, ['kategori', 'category', 'kelompok']);
 
-  mutate(d => {
-    if (replaceAll) {
-      d.teachers = [];
-      d.subjects = [];
-      d.classes = [];
-      d.contracts = [];
-      d.cards = [];
+    if (iGuru === -1 || iMapel === -1) {
+      return alert('❌ Format MATRIKS butuh kolom "Guru" dan "Mapel".');
     }
 
-    const classObjs = classNames.map((cName, idx) => {
-      let cls = d.classes.find(x => x.name.toLowerCase() === cName.toLowerCase());
-      if (!cls) {
-        cls = { id: `c${Date.now()}_${idx}`, name: cName, timeOff: {} };
-        d.classes.push(cls);
-      }
-      return cls;
+    // Kolom kelas = semua kolom setelah kolom mapel yang bukan kolom meta
+    const metaCols = new Set([iGuru, iKode, iMapel, iKodeMapel, iKategori].filter(x => x >= 0));
+    const classCols = [];
+    for (let i = 0; i < headerRow.length; i++) {
+      if (!metaCols.has(i) && headerRow[i]) classCols.push({ index: i, name: headerRow[i] });
+    }
+    if (classCols.length === 0) {
+      return alert('❌ Format MATRIKS butuh minimal satu kolom nama kelas (mis: X1, X2).');
+    }
+
+    classCols.forEach(cc => newClasses.add(cc.name));
+
+    dataRows.forEach(row => {
+      const teacherName = String(row[iGuru] || '').trim();
+      const teacherCode = (iKode >= 0 ? String(row[iKode] || '').trim().toUpperCase() : '') || generateTeacherCode(teacherName, newTeachers.size + 1);
+      const subjectName = String(row[iMapel] || '').trim();
+      if (!teacherName || !subjectName) return;
+
+      const subjectCode = (iKodeMapel >= 0 ? String(row[iKodeMapel] || '').trim().toUpperCase() : '') || subjectName.slice(0, 3).toUpperCase();
+      const category = (iKategori >= 0 ? String(row[iKategori] || '').trim().toUpperCase() : '') || guessCategory(subjectName);
+
+      if (!newTeachers.has(teacherCode)) newTeachers.set(teacherCode, { name: teacherName, code: teacherCode });
+      if (!newSubjects.has(subjectCode)) newSubjects.set(subjectCode, { name: subjectName, code: subjectCode, category });
+
+      classCols.forEach(cc => {
+        const hours = parseInt(String(row[cc.index] || '0').replace(/[^\d-]/g, ''), 10) || 0;
+        if (hours > 0) {
+          distribution.push({ teacherCode, subjectCode, className: cc.name, hours });
+        }
+      });
     });
 
-    for (let r = headerRowIdx + 1; r < rows.length; r++) {
-      const cols = rows[r];
-      const tName = (cols[0] || '').trim();
-      const rawCode = hasExplicitCodeCol ? (cols[1] || '').trim() : '';
-      const sName = (cols[subjColIdx] || '').trim();
+  } else if (format === 'LONG') {
+    // --- FORMAT LONG: satu baris = satu pembagian ---
+    const iGuru    = findColIndex(headerRow, ['guru', 'nama guru', 'pengajar', 'teacher']);
+    const iKode    = findColIndex(headerRow, ['kode guru', 'kode', 'code']);
+    const iMapel   = findColIndex(headerRow, ['mapel', 'mata pelajaran', 'subject']);
+    const iKodeMapel = findColIndex(headerRow, ['kode mapel']);
+    const iKategori = findColIndex(headerRow, ['kategori', 'category']);
+    const iKelas   = findColIndex(headerRow, ['kelas', 'class']);
+    const iJam     = findColIndex(headerRow, ['jam per pertemuan', 'jamperpertemuan', 'durasi', 'jam', 'sks']);
+    const iPertemuan = findColIndex(headerRow, ['pertemuan', 'sessions', 'jumlah pertemuan']);
 
-      if (!tName || !sName) continue;
-      if (/^(jumlah|total)$/i.test(tName)) continue;
-
-      let teacher = d.teachers.find(x => x.name.toLowerCase() === tName.toLowerCase());
-      if (!teacher) {
-        teacher = {
-          id: `t${Date.now()}_${r}`,
-          name: tName,
-          code: rawCode || generateTeacherCode(tName, d.teachers.length + 1),
-          timeOff: {}
-        };
-        d.teachers.push(teacher);
-      }
-
-      let subject = d.subjects.find(x => x.name.toLowerCase() === sName.toLowerCase());
-      if (!subject) {
-        subject = {
-          id: `s${Date.now()}_${r}`,
-          name: sName,
-          code: sName.length <= 6 ? sName.toUpperCase() : sName.slice(0, 5).toUpperCase(),
-          category: 'EXACT'
-        };
-        d.subjects.push(subject);
-      }
-
-      classObjs.forEach((cls, cIdx) => {
-        const hours = parseInt(cols[classStartIdx + cIdx], 10) || 0;
-        if (hours <= 0) return;
-
-        const blocks = splitHoursToBlocks(hours);
-        const grouped = {};
-        blocks.forEach(b => { grouped[b] = (grouped[b] || 0) + 1; });
-
-        Object.entries(grouped).forEach(([durStr, sessCount], gIdx) => {
-          const duration = parseInt(durStr, 10);
-          const k = {
-            id: `k${Date.now()}_${r}_${cIdx}_${gIdx}`,
-            teacherId: teacher.id, subjectId: subject.id, classId: cls.id, roomId: '',
-            sessions: sessCount, duration
-          };
-          d.contracts.push(k);
-          for (let i = 0; i < sessCount; i++) {
-            d.cards.push({ cardId: `${k.id}_s${i + 1}`, contractId: k.id, dayIndex: null, startPeriod: null, isLocked: false });
-            cardCount++;
-          }
-        });
-      });
+    if (iGuru === -1 || iMapel === -1 || iKelas === -1) {
+      return alert('❌ Format LONG butuh kolom "Guru", "Mapel", dan "Kelas".');
     }
+
+    dataRows.forEach(row => {
+      const teacherName = String(row[iGuru] || '').trim();
+      const teacherCode = (iKode >= 0 ? String(row[iKode] || '').trim().toUpperCase() : '') || generateTeacherCode(teacherName, newTeachers.size + 1);
+      const subjectName = String(row[iMapel] || '').trim();
+      const className   = String(row[iKelas] || '').trim();
+      if (!teacherName || !subjectName || !className) return;
+
+      const subjectCode = (iKodeMapel >= 0 ? String(row[iKodeMapel] || '').trim().toUpperCase() : '') || subjectName.slice(0, 3).toUpperCase();
+      const category = (iKategori >= 0 ? String(row[iKategori] || '').trim().toUpperCase() : '') || guessCategory(subjectName);
+
+      const jamPerPertemuan = parseInt(String(row[iJam] || '2').replace(/[^\d]/g, ''), 10) || 2;
+      const jumlahPertemuan = parseInt(String(row[iPertemuan] || '1').replace(/[^\d]/g, ''), 10) || 1;
+      // Total jam = jam per pertemuan × jumlah pertemuan (dipakai untuk splitHoursToBlocks)
+      // Tapi karena LONG sudah menentukan pertemuan secara eksplisit,
+      // kita simpan sebagai "paket" khusus di distribution dengan durasi tetap.
+      newClasses.add(className);
+      if (!newTeachers.has(teacherCode)) newTeachers.set(teacherCode, { name: teacherName, code: teacherCode });
+      if (!newSubjects.has(subjectCode)) newSubjects.set(subjectCode, { name: subjectName, code: subjectCode, category });
+
+      // Distribusi per pertemuan → total jam = jamPerPertemuan * jumlahPertemuan
+      distribution.push({
+        teacherCode, subjectCode, className,
+        hours: jamPerPertemuan * jumlahPertemuan,
+        fixedDuration: jamPerPertemuan,      // durasi tiap pertemuan
+        fixedSessions: jumlahPertemuan       // jumlah kartu
+      });
+    });
+  }
+
+  if (distribution.length === 0) {
+    return alert('❌ Tidak ada data pembagian jam yang valid untuk diimpor.');
+  }
+
+  // ---- Terapkan ke state ----
+  mutate(d => {
+    // 1) Tambahkan subjects baru
+    newSubjects.forEach(s => {
+      if (!d.subjects.some(x => x.code.toUpperCase() === s.code)) {
+        d.subjects.push({ id: 's' + Date.now() + Math.random().toString(36).slice(2, 6), name: s.name, code: s.code, category: s.category });
+      }
+    });
+    // 2) Tambahkan teachers baru
+    newTeachers.forEach(t => {
+      if (!d.teachers.some(x => x.code.toUpperCase() === t.code)) {
+        d.teachers.push({ id: 't' + Date.now() + Math.random().toString(36).slice(2, 6), name: t.name, code: t.code, timeOff: {} });
+      }
+    });
+    // 3) Tambahkan classes baru
+    newClasses.forEach(name => {
+      if (!d.classes.some(x => x.name.toLowerCase() === name.toLowerCase())) {
+        d.classes.push({ id: 'c' + Date.now() + Math.random().toString(36).slice(2, 6), name, timeOff: {} });
+      }
+    });
+
+    // 4) Buat contracts + cards
+    distribution.forEach((dist, idx) => {
+      const teacher = d.teachers.find(x => x.code.toUpperCase() === dist.teacherCode);
+      const subject = d.subjects.find(x => x.code.toUpperCase() === dist.subjectCode);
+      const cls = d.classes.find(x => x.name.toLowerCase() === dist.className.toLowerCase());
+      if (!teacher || !subject || !cls) return;
+
+      const blocks = dist.fixedDuration && dist.fixedSessions
+        ? Array(dist.fixedSessions).fill(dist.fixedDuration)
+        : splitHoursToBlocks(dist.hours);
+
+      // Gabungkan blok dengan durasi sama → 1 contract multi-session
+      const grouped = {};
+      blocks.forEach(b => { grouped[b] = (grouped[b] || 0) + 1; });
+
+      let gIdx = 0;
+      Object.entries(grouped).forEach(([durStr, sessCount]) => {
+        const duration = parseInt(durStr, 10);
+        const contractId = `k${Date.now()}_${idx}_${gIdx++}`;
+        const k = {
+          id: contractId,
+          teacherId: teacher.id,
+          subjectId: subject.id,
+          classId: cls.id,
+          roomId: '',
+          sessions: sessCount,
+          duration
+        };
+        d.contracts.push(k);
+        for (let i = 0; i < sessCount; i++) {
+          d.cards.push({
+            cardId: `${contractId}_s${i + 1}`,
+            contractId,
+            dayIndex: null,
+            startPeriod: null,
+            isLocked: false
+          });
+        }
+      });
+    });
   });
 
   closeUploadModal();
+  document.getElementById('pasteExcelArea').value = '';
+  document.getElementById('uploadFileInput').value = '';
+
+  alert(
+    `✅ Import berhasil!\n\n` +
+    `Format terdeteksi: ${format}\n` +
+    `Guru baru: ${newTeachers.size}\n` +
+    `Mapel baru: ${newSubjects.size}\n` +
+    `Kelas baru: ${newClasses.size}\n` +
+    `Baris pembagian: ${distribution.length}\n\n` +
+    `Cek menu "Pelajaran" untuk melihat kartu yang dihasilkan.`
+  );
+}
+
+// Helper: tebak kategori mapel dari nama
+function guessCategory(name) {
+  const n = name.toLowerCase();
+  if (/matematika|fisika|kimia|biologi|ipa|informatika|komputer|tik|statistika/.test(n)) return 'EXACT';
+  if (/sejarah|geografi|ekonomi|sosiologi|ips|ppkn|pkn|kewarganegaraan/.test(n)) return 'SOCIAL';
+  if (/indonesia|inggris|arab|jepang|mandarin|bahasa|sastra/.test(n)) return 'LANG';
+  if (/seni|pjok|olahraga|penjas|prakarya|budaya|musik|tari|rupa/.test(n)) return 'ART';
+  return 'EXACT';
+}
+closeUploadModal();
   alert(`✅ Berhasil mengimpor!\n• ${state.classes.length} Kelas\n• ${state.subjects.length} Mata Pelajaran\n• ${state.teachers.length} Guru\n• ${cardCount} Kartu Pelajaran siap susun.`);
 }
 
