@@ -229,101 +229,134 @@
   };
 
   window.sendAiCommand = async function() {
-    const input = document.getElementById('aiPromptInput');
-    const log = document.getElementById('aiChatLog');
-    const btnSend = document.getElementById('btnSendAi');
-    const prompt = input.value.trim();
-    
-    if (!prompt) return;
+  const input = document.getElementById('aiPromptInput');
+  const log = document.getElementById('aiChatLog');
+  const btnSend = document.getElementById('btnSendAi');
+  const prompt = input.value.trim();
+  if (!prompt) return;
 
-    if (!window.state) {
-      log.innerHTML += `<div class="bg-rose-100 text-rose-800 p-2.5 rounded-lg mr-6">⚠️ Data jadwal belum siap.</div>`;
-      return;
-    }
-
-    // 1. Tampilkan pesan user
-    log.innerHTML += `<div class="bg-slate-200 text-slate-800 p-2.5 rounded-lg ml-6">${prompt}</div>`;
-    input.value = '';
+  if (!window.state) {
+    log.innerHTML += `<div class="bg-rose-100 text-rose-800 p-2.5 rounded-lg mr-6">⚠️ Data jadwal belum siap. Tunggu login selesai.</div>`;
     log.scrollTop = log.scrollHeight;
+    return;
+  }
 
-    // 2. Tampilkan Loading
-    const loadingId = 'loading_' + Date.now();
-    log.innerHTML += `<div id="${loadingId}" class="text-slate-500 italic p-2 text-xs">AI sedang memproses...</div>`;
-    log.scrollTop = log.scrollHeight;
-    btnSend.disabled = true;
-    btnSend.classList.add('opacity-50');
+  log.innerHTML += `<div class="bg-slate-200 text-slate-800 p-2.5 rounded-lg ml-6">${escapeHtml(prompt)}</div>`;
+  input.value = '';
+  log.scrollTop = log.scrollHeight;
 
-    try {
-      const context = {
-        days: window.state.config.days,
-        periodsPerDay: window.state.config.periodsPerDay,
-        teachers: window.state.teachers.map(t => ({ id: t.id, name: t.name, code: t.code })),
-        subjects: window.state.subjects.map(s => ({ id: s.id, name: s.name }))
-      };
+  const loadingId = 'loading_' + Date.now();
+  log.innerHTML += `<div id="${loadingId}" class="text-slate-500 italic p-2 text-xs">AI sedang memproses...</div>`;
+  log.scrollTop = log.scrollHeight;
+  btnSend.disabled = true;
+  btnSend.classList.add('opacity-50');
 
-      const response = await fetch('https://pembuat-jadwal.yhanedy.workers.dev/api/ai-command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: prompt, context: context })
-      });
-      
-      const data = await response.json();
-      
-      console.log("Data Mentah dari AI:", data);
-      document.getElementById(loadingId).remove();
+  try {
+    // Pakai workerUrl dari state config (bukan hardcoded!) — fallback ke default
+    const workerBase = (window.state?.config?.workerUrl || 'https://pembuat-jadwal.yhanedy.workers.dev').replace(/\/$/, '');
 
-      let teksBalasan = "Maaf, format balasan tidak dikenali.";
-      if (typeof data === 'object' && data !== null) {
-        if (data.reply) teksBalasan = data.reply;
-        else if (data.error) teksBalasan = "⚠️ " + data.error;
-      } else if (typeof data === 'string') {
-        teksBalasan = data;
-      }
+    const context = {
+      days: window.state.config.days || [],
+      periodsPerDay: window.state.config.periodsPerDay || 10,
+      teachers: (window.state.teachers || []).map(t => ({ id: t.id, name: t.name, code: t.code })),
+      subjects: (window.state.subjects || []).map(s => ({ id: s.id, name: s.name }))
+    };
 
-      log.innerHTML += `<div class="bg-blue-100 text-blue-950 p-2.5 rounded-lg mr-6">${teksBalasan}</div>`;
+    const response = await fetch(`${workerBase}/api/ai-command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, context })
+    });
 
-      // Eksekusi aksi
-      if (data.actions && data.actions.length > 0 && window.mutate) {
-        let aksiTerlaksana = [];
-        data.actions.forEach(action => {
-          if (action.type === 'SET_GLOBAL_BLOCK') {
-            const key = `${action.dayIndex}-${action.periodIndexes[0]}`;
-            window.mutate(d => { 
-              if(!d.config.globalBlocked) d.config.globalBlocked = {};
-              d.config.globalBlocked[key] = action.label || 'Blokir AI'; 
-            });
-            aksiTerlaksana.push("Memblokir jam sekolah.");
-          }
-          if (action.type === 'SET_TEACHER_TIMEOFF') {
-            action.teacherIds.forEach(tid => {
+    const data = await response.json();
+    const loadingEl = document.getElementById(loadingId);
+    if (loadingEl) loadingEl.remove();
+
+    // Tampilkan balasan
+    let teksBalasan = data.reply || (data.error ? '⚠️ ' + data.error : 'Tidak ada balasan.');
+    log.innerHTML += `<div class="bg-blue-100 text-blue-950 p-2.5 rounded-lg mr-6">${escapeHtml(teksBalasan)}</div>`;
+
+    // Eksekusi aksi
+    if (Array.isArray(data.actions) && data.actions.length > 0 && window.mutate) {
+      let aksiTerlaksana = [];
+      data.actions.forEach(action => {
+        try {
+          if (action.type === 'SET_GLOBAL_BLOCK' && Array.isArray(action.periodIndexes)) {
+            window.mutate(d => {
+              if (!d.config.globalBlocked) d.config.globalBlocked = {};
               action.periodIndexes.forEach(p => {
-                const key = `${action.dayIndex}-${p}`;
-                window.mutate(d => {
-                  const t = d.teachers.find(x => x.id === tid);
-                  if (t) { if(!t.timeOff) t.timeOff = {}; t.timeOff[key] = true; }
-                });
+                d.config.globalBlocked[`${action.dayIndex}-${p}`] = action.label || 'Blokir AI';
               });
             });
-            aksiTerlaksana.push("Mengatur jam libur guru.");
+            aksiTerlaksana.push(`blokir ${action.label || 'jam'} hari ${context.days[action.dayIndex]}`);
           }
-        });
-
-        if (aksiTerlaksana.length > 0) {
-          log.innerHTML += `<div class="text-emerald-600 text-[10px] italic p-1 ml-2">✓ ${aksiTerlaksana.join(' ')}</div>`;
-          if (window.renderGrid) window.renderGrid();
+          else if (action.type === 'CLEAR_GLOBAL_BLOCK' && Array.isArray(action.periodIndexes)) {
+            window.mutate(d => {
+              action.periodIndexes.forEach(p => {
+                delete d.config.globalBlocked?.[`${action.dayIndex}-${p}`];
+              });
+            });
+            aksiTerlaksana.push(`hapus blokir hari ${context.days[action.dayIndex]}`);
+          }
+          else if (action.type === 'SET_TEACHER_TIMEOFF' && Array.isArray(action.teacherIds) && Array.isArray(action.periodIndexes)) {
+            window.mutate(d => {
+              action.teacherIds.forEach(tid => {
+                const t = d.teachers.find(x => x.id === tid);
+                if (!t) return;
+                if (!t.timeOff) t.timeOff = {};
+                action.periodIndexes.forEach(p => { t.timeOff[`${action.dayIndex}-${p}`] = true; });
+              });
+            });
+            aksiTerlaksana.push(`libur ${action.teacherIds.length} guru`);
+          }
+          else if (action.type === 'CLEAR_TEACHER_TIMEOFF' && Array.isArray(action.teacherIds) && Array.isArray(action.periodIndexes)) {
+            window.mutate(d => {
+              action.teacherIds.forEach(tid => {
+                const t = d.teachers.find(x => x.id === tid);
+                if (!t?.timeOff) return;
+                action.periodIndexes.forEach(p => { delete t.timeOff[`${action.dayIndex}-${p}`]; });
+              });
+            });
+            aksiTerlaksana.push(`hapus libur guru`);
+          }
+          else if (action.type === 'SET_DAY_MAX_PERIOD' && action.maxPeriod) {
+            window.mutate(d => {
+              const dayName = d.config.days[action.dayIndex];
+              if (!d.config.dayMaxPeriods) d.config.dayMaxPeriods = {};
+              d.config.dayMaxPeriods[dayName] = action.maxPeriod;
+            });
+            aksiTerlaksana.push(`batasi ${context.days[action.dayIndex]} sampai jam ${action.maxPeriod}`);
+          }
+          else if (action.type === 'RUN_GENERATE' && typeof window.startWorkerGeneration === 'function') {
+            window.startWorkerGeneration();
+            aksiTerlaksana.push('jalankan generator otomatis');
+          }
+        } catch (e) {
+          aksiTerlaksana.push(`gagal: ${action.type} (${e.message})`);
         }
-      }
+      });
 
-    } catch (error) {
-      if (document.getElementById(loadingId)) document.getElementById(loadingId).remove();
-      log.innerHTML += `<div class="bg-rose-100 text-rose-800 p-2.5 rounded-lg mr-6">⚠️ Error: ${error.message}</div>`;
-      console.error("Error di frontend:", error);
-    } finally {
-      btnSend.disabled = false;
-      btnSend.classList.remove('opacity-50');
-      log.scrollTop = log.scrollHeight;
+      if (aksiTerlaksana.length > 0) {
+        log.innerHTML += `<div class="text-emerald-600 text-[10px] italic p-1 ml-2">✓ ${escapeHtml(aksiTerlaksana.join(', '))}</div>`;
+        if (window.renderGrid) window.renderGrid();
+      }
     }
-  };
+  } catch (error) {
+    const loadingEl = document.getElementById(loadingId);
+    if (loadingEl) loadingEl.remove();
+    log.innerHTML += `<div class="bg-rose-100 text-rose-800 p-2.5 rounded-lg mr-6">⚠️ Koneksi error: ${escapeHtml(error.message)}</div>`;
+    console.error('[AI] Error:', error);
+  } finally {
+    btnSend.disabled = false;
+    btnSend.classList.remove('opacity-50');
+    log.scrollTop = log.scrollHeight;
+  }
+};
+
+// Helper kecil untuk cegah XSS saat echo prompt
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
 </script>
   <!-- 5. DOCK KARTU BAWAH (UNPLACED CARDS STRIP KHAS aSc TIMETABLES) -->
   <section class="h-28 bg-slate-100 border-t-2 border-slate-400 flex flex-col shrink-0 no-print">
