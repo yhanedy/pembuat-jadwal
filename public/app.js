@@ -1082,29 +1082,77 @@ window.downloadCsvTemplate = () => {
   if (window.XLSX) {
     const wb = window.XLSX.utils.book_new();
 
+    // ===== Sheet 1: FORMAT MATRIKS =====
     const matrixData = [
       ['Guru', 'Kode', 'Mapel', 'Kode Mapel', 'Kategori', 'X1', 'X2', 'X3', 'XI1', 'XI2'],
       ['Drs. Ahmad Fauzi, M.Si', 'AFZ', 'Matematika', 'MTK', 'EXACT', 4, 4, 4, 0, 0],
       ['Dra. Hi. Nurhasanah, M.Pd', 'NUR', 'Bahasa Indonesia', 'IND', 'LANG', 4, 4, 0, 4, 4],
-      ['Budi Santoso, S.Pd., M.Si', 'BDS', 'Fisika', 'FIS', 'EXACT', 0, 0, 0, 3, 3]
+      ['Budi Santoso, S.Pd., M.Si', 'BDS', 'Fisika', 'FIS', 'EXACT', 0, 0, 0, 3, 3],
+      ['Siti Aminah, S.Pd', 'SAM', 'Sejarah', 'SEJ', 'SOCIAL', 0, 2, 2, 0, 0],
+      ['Rudi Hartono, S.Pd', 'RDH', 'PJOK', 'PJOK', 'ART', 2, 0, 0, 2, 2],
+      ['', '', '', '', '', '', '', '', '', ''],
+      ['CATATAN:', 'Isi kolom Kategori dengan salah satu:', '', '', '', '', '', '', '', ''],
+      ['', 'EXACT', '= Eksakta / Sains / Teknologi (warna BIRU)', '', '', '', '', '', '', ''],
+      ['', 'SOCIAL', '= Sosial / Humaniora / Agama (warna HIJAU)', '', '', '', '', '', '', ''],
+      ['', 'LANG', '= Bahasa (warna KUNING)', '', '', '', '', '', '', ''],
+      ['', 'ART', '= Seni / PJOK / Prakarya (warna UNGU)', '', '', '', '', '', '', ''],
+      ['', '', 'Kalau Kategori dikosongkan, sistem otomatis menebak dari nama Mapel.', '', '', '', '', '', '', '']
     ];
-    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(matrixData), 'Format Matriks');
+    const wsMatrix = window.XLSX.utils.aoa_to_sheet(matrixData);
+    wsMatrix['!cols'] = [
+      { wch: 26 }, { wch: 8 }, { wch: 22 }, { wch: 12 }, { wch: 10 },
+      { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 6 }
+    ];
+    window.XLSX.utils.book_append_sheet(wb, wsMatrix, 'Format Matriks');
 
+    // ===== Sheet 2: FORMAT LONG (baris per kelas) =====
     const longData = [
       ['Guru', 'Kode Guru', 'Mapel', 'Kode Mapel', 'Kategori', 'Kelas', 'JamPerPertemuan', 'Pertemuan', 'Ruang'],
       ['Drs. Ahmad Fauzi, M.Si', 'AFZ', 'Matematika', 'MTK', 'EXACT', 'X1', 2, 2, ''],
       ['Drs. Ahmad Fauzi, M.Si', 'AFZ', 'Matematika', 'MTK', 'EXACT', 'X2', 2, 2, ''],
-      ['Dra. Hi. Nurhasanah, M.Pd', 'NUR', 'Bahasa Indonesia', 'IND', 'LANG', 'X1', 2, 2, '']
+      ['Dra. Hi. Nurhasanah, M.Pd', 'NUR', 'Bahasa Indonesia', 'IND', 'LANG', 'X1', 2, 2, ''],
+      ['Siti Aminah, S.Pd', 'SAM', 'Sejarah', 'SEJ', 'SOCIAL', 'X1', 2, 1, ''],
+      ['Rudi Hartono, S.Pd', 'RDH', 'PJOK', 'PJOK', 'ART', 'X1', 2, 1, 'Lapangan'],
+      ['', '', '', '', '', '', '', '', ''],
+      ['CATATAN:', 'Isi kolom Kategori dengan salah satu:', '', '', '', '', '', '', ''],
+      ['', 'EXACT', '= Eksakta / Sains / Teknologi (warna BIRU)', '', '', '', '', '', ''],
+      ['', 'SOCIAL', '= Sosial / Humaniora / Agama (warna HIJAU)', '', '', '', '', '', ''],
+      ['', 'LANG', '= Bahasa (warna KUNING)', '', '', '', '', '', ''],
+      ['', 'ART', '= Seni / PJOK / Prakarya (warna UNGU)', '', '', '', '', '', ''],
+      ['', '', 'Kalau Kategori dikosongkan, sistem otomatis menebak dari nama Mapel.', '', '', '', '', '', '']
     ];
-    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(longData), 'Format Long');
+    const wsLong = window.XLSX.utils.aoa_to_sheet(longData);
+    wsLong['!cols'] = [
+      { wch: 26 }, { wch: 10 }, { wch: 22 }, { wch: 12 }, { wch: 10 },
+      { wch: 8 }, { wch: 16 }, { wch: 10 }, { wch: 12 }
+    ];
+    window.XLSX.utils.book_append_sheet(wb, wsLong, 'Format Long');
+
+    // ===== Sheet 3: Referensi Kategori (read-only) =====
+    const kategoriRef = [
+      ['KODE KATEGORI', 'NAMA KATEGORI', 'WARNA KARTU', 'CONTOH MAPEL'],
+      ['EXACT', 'Eksakta / Sains / Teknologi', 'BIRU', 'Matematika, Fisika, Kimia, Biologi, IPA, Informatika, TIK'],
+      ['SOCIAL', 'Sosial / Humaniora / Agama', 'HIJAU', 'Sejarah, Geografi, Ekonomi, Sosiologi, IPS, PPKn, Agama, Fiqih'],
+      ['LANG', 'Bahasa', 'KUNING', 'Bahasa Indonesia, Bahasa Inggris, Bahasa Arab, Mandarin, Sastra'],
+      ['ART', 'Seni / PJOK / Prakarya', 'UNGU', 'Seni Budaya, PJOK, Penjas, Prakarya, Musik, Tari, Seni Rupa']
+    ];
+    const wsRef = window.XLSX.utils.aoa_to_sheet(kategoriRef);
+    wsRef['!cols'] = [{ wch: 16 }, { wch: 32 }, { wch: 14 }, { wch: 60 }];
+    window.XLSX.utils.book_append_sheet(wb, wsRef, 'Referensi Kategori');
 
     window.XLSX.writeFile(wb, 'template_import_jadwal.xlsx');
     return;
   }
+
+  // ===== Fallback kalau SheetJS belum termuat (CSV sederhana) =====
   const csv = [
     'Guru;Kode;Mapel;Kode Mapel;Kategori;X1;X2;X3;XI1;XI2',
-    '"Drs. Ahmad Fauzi, M.Si";AFZ;Matematika;MTK;EXACT;4;4;4;0;0',
-    '"Dra. Hi. Nurhasanah, M.Pd";NUR;Bahasa Indonesia;IND;LANG;4;4;0;4;4'
+    '"Dadang Yhanedy, M.Si";AFZ;Matematika;MTK;EXACT;4;4;4;0;0',
+    '"Dra. Nur Nurhasanah, M.Pd";NUR;Bahasa Indonesia;IND;LANG;4;4;0;4;4',
+    '"Dwi Anggoro, S.Pd., M.Si";BDS;Fisika;FIS;EXACT;0;0;0;3;3',
+    '"Sajaya, S.Pd";SAM;Sejarah;SEJ;SOCIAL;0;2;2;0;0',
+    '"heri christiawan, M.Pd";RDH;PJOK;PJOK;ART;2;0;0;2;2',
+    'CATATAN: Kategori yang valid = EXACT (Eksakta/Biru), SOCIAL (Sosial/Hijau), LANG (Bahasa/Kuning), ART (Seni-PJOK/Ungu). Kosongkan = auto-tebak.'
   ].join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
@@ -1112,7 +1160,6 @@ window.downloadCsvTemplate = () => {
   a.download = 'template_import_jadwal.csv';
   a.click();
 };
-
 window.processUploadedFile = () => {
   const file = document.getElementById('uploadFileInput').files[0];
   if (!file) return alert('Pilih file Excel (.xlsx/.xls), CSV, atau JSON terlebih dahulu.');
