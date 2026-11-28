@@ -162,7 +162,30 @@ function parseFullTableText(rawText) {
   if (row.some(c => c !== '')) rows.push(row);
   return rows;
 }
+// ============================================================================
+// DETEKSI FORMAT IMPORT (matriks vs long/baris-per-kelas)
+// ============================================================================
+function detectImportFormat(headerRow) {
+  const norm = headerRow.map(c => String(c || '').toLowerCase().trim());
+  // Format LONG: ada kolom "kelas" + "mapel" + ("jam"/"pertemuan"/"durasi")
+  const hasKelas = norm.some(c => /^(kelas|class)$/.test(c));
+  const hasMapel = norm.some(c => /^(mapel|mata\s*pelajaran|subject)$/.test(c));
+  const hasJam = norm.some(c => /^(jam|jamperpertemuan|durasi|pertemuan|sks|jtm)$/.test(c));
+  if (hasKelas && hasMapel && hasJam) return 'LONG';
+  // Format MATRIKS: ada kolom guru + beberapa kolom nama kelas sebagai header
+  const hasGuru = norm.some(c => /^(guru|nama\s*guru|pengajar|teacher)$/.test(c));
+  if (hasGuru) return 'MATRIX';
+  return 'UNKNOWN';
+}
 
+// Cari index kolom berdasarkan beberapa alias
+function findColIndex(headerRow, aliases) {
+  const norm = headerRow.map(c => String(c || '').toLowerCase().replace(/\s+/g, ' ').trim());
+  for (let i = 0; i < norm.length; i++) {
+    if (aliases.some(a => norm[i] === a || norm[i].includes(a))) return i;
+  }
+  return -1;
+}
 function generateTeacherCode(fullName, fallbackIndex) {
   const tanpaGelarBelakang = fullName.split(',')[0].trim();
   const bersih = tanpaGelarBelakang.replace(/^(Drs\.|Dra\.|Dr\.|Ir\.|H\.|Hj\.|Prof\.|S\.Pd\.?|M\.Pd\.?|M\.Si\.?)\s+/gi, '').trim();
