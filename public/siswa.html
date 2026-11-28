@@ -11,7 +11,6 @@
 </head>
 <body class="bg-slate-100 text-slate-800 font-sans min-h-screen flex flex-col">
 
-  <!-- HEADER MOBILE-FIRST -->
   <header class="bg-blue-900 text-white sticky top-0 z-30 shadow-md">
     <div class="max-w-xl mx-auto px-4 py-3.5 flex items-center justify-between">
       <div>
@@ -22,8 +21,6 @@
         <i data-lucide="share-2" class="w-3.5 h-3.5"></i> Bagikan
       </button>
     </div>
-
-    <!-- FILTER KELAS / GURU -->
     <div class="bg-blue-950/80 border-t border-blue-800/80 px-4 py-2.5">
       <div class="max-w-xl mx-auto flex gap-2">
         <select id="filterType" onchange="onFilterTypeChange()" class="bg-blue-900 text-white text-xs font-semibold rounded-lg px-2.5 py-2 border border-blue-700">
@@ -37,12 +34,10 @@
     </div>
   </header>
 
-  <!-- STATUS OFFLINE / CACHE -->
   <div id="offlineBanner" class="hidden bg-amber-500 text-slate-950 text-xs font-semibold text-center py-1 px-3">
     Mode Offline: Menampilkan jadwal terakhir yang tersimpan di HP Anda.
   </div>
 
-  <!-- KONTEN UTAMA (TIMELINE HARIAN) -->
   <main class="max-w-xl mx-auto w-full px-4 py-4 flex-1 space-y-4" id="scheduleContainer">
     <div class="text-center py-16 text-slate-400 text-sm">
       <div class="animate-spin inline-block w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full mb-2"></div>
@@ -50,15 +45,13 @@
     </div>
   </main>
 
-  <!-- FOOTER -->
   <footer class="max-w-xl mx-auto w-full px-4 py-6 text-center text-xs text-slate-400">
     <p id="publishedInfo">Diperbarui otomatis oleh Sistem Kurikulum</p>
   </footer>
 
   <script>
-    // Konfigurasi Default (Bisa ditimpa lewat URL parameter ?school=...&worker=...)
     const params = new URLSearchParams(window.location.search);
-    const SCHOOL_ID = params.get('school') || 'smpn-1-nusantara';
+    const SCHOOL_ID = params.get('school') || '';
     const WORKER_URL = (params.get('worker') || 'https://pembuat-jadwal.yhanedy.workers.dev').replace(/\/$/, '');
     const CACHE_KEY = `public_schedule_cache_${SCHOOL_ID}`;
 
@@ -72,12 +65,20 @@
     let scheduleData = null;
 
     async function loadPublicSchedule() {
+      if (!SCHOOL_ID) {
+        document.getElementById('scheduleContainer').innerHTML = `
+          <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 text-center space-y-2">
+            <div class="text-3xl">🔗</div>
+            <h2 class="font-bold text-base">Link Tidak Valid</h2>
+            <p class="text-xs text-slate-500">Minta link jadwal yang benar dari guru/admin sekolah Anda.</p>
+          </div>`;
+        return;
+      }
+
       try {
         const res = await fetch(`${WORKER_URL}/api/public/${SCHOOL_ID}`);
         if (!res.ok) throw new Error('Belum ada jadwal yang dipublikasikan oleh admin.');
         scheduleData = await res.json();
-
-        // Simpan ke localStorage HP siswa agar bisa dibuka tanpa kuota internet
         localStorage.setItem(CACHE_KEY, JSON.stringify(scheduleData));
       } catch (err) {
         const cached = localStorage.getItem(CACHE_KEY);
@@ -113,11 +114,8 @@
 
       select.innerHTML = list.map(item => `<option value="${item}">${type === 'CLASS' ? 'Kelas ' + item : item}</option>`).join('');
 
-      // Cek apakah ada parameter ?kelas=7A di URL
       const preselected = params.get('kelas') || params.get('guru');
-      if (preselected && list.includes(preselected)) {
-        select.value = preselected;
-      }
+      if (preselected && list.includes(preselected)) select.value = preselected;
 
       renderStudentSchedule();
     }
@@ -128,8 +126,7 @@
       const selectedVal = document.getElementById('filterValue').value;
       const container = document.getElementById('scheduleContainer');
 
-      // Deteksi hari ini (0 = Senin ... 5 = Sabtu)
-      const jsDay = new Date().getDay(); // 0 = Minggu, 1 = Senin
+      const jsDay = new Date().getDay();
       const todayIndex = jsDay === 0 ? -1 : jsDay - 1;
 
       const filteredItems = (scheduleData.items || []).filter(item =>
@@ -165,32 +162,25 @@
             html += `
               <div class="p-3.5 flex items-start gap-3">
                 <div class="w-20 shrink-0 pt-0.5">
-                  <span class="inline-block text-[11px] font-bold px-2 py-1 rounded-md bg-slate-100 text-slate-700 w-full text-center">
-                    ${jamLabel}
-                  </span>
+                  <span class="inline-block text-[11px] font-bold px-2 py-1 rounded-md bg-slate-100 text-slate-700 w-full text-center">${jamLabel}</span>
                 </div>
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-1.5 mb-0.5">
                     <span class="text-[10px] font-bold px-1.5 py-0.2 rounded border ${badgeClass}">${lesson.subjectCode}</span>
                     <h3 class="font-bold text-sm text-slate-900 truncate">${lesson.subjectName}</h3>
                   </div>
-                  <p class="text-xs text-slate-600 truncate">
-                    ${type === 'CLASS' ? lesson.teacherName : 'Kelas ' + lesson.className}
-                  </p>
-                  <p class="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
-                    📍 ${lesson.roomName}
-                  </p>
+                  <p class="text-xs text-slate-600 truncate">${type === 'CLASS' ? lesson.teacherName : 'Kelas ' + lesson.className}</p>
+                  <p class="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">📍 ${lesson.roomName}</p>
                 </div>
               </div>
             `;
           });
         }
-
         html += `</div></div>`;
       });
 
       container.innerHTML = html;
-      lucide.createIcons();
+      if (window.lucide) lucide.createIcons();
     }
 
     function shareCurrentLink() {
@@ -200,12 +190,12 @@
         navigator.share({ title: `Jadwal Pelajaran ${val}`, url: shareUrl });
       } else {
         navigator.clipboard.writeText(shareUrl);
-        alert(`Link jadwal ${val} berhasil disalin! Siap ditempel ke grup WhatsApp:\n${shareUrl}`);
+        alert(`Link jadwal ${val} berhasil disalin!\n\n${shareUrl}`);
       }
     }
 
     loadPublicSchedule();
-    lucide.createIcons();
+    if (window.lucide) lucide.createIcons();
   </script>
 </body>
 </html>
