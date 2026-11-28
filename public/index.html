@@ -9,43 +9,28 @@
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <style>
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-    .ribbon-btn {
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      padding: 6px 10px; border-radius: 6px; min-width: 68px; transition: all 0.12s;
-      border: 1px solid transparent;
-    }
+    .ribbon-btn { display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 6px 10px; border-radius: 6px; min-width: 68px; transition: all 0.12s; border: 1px solid transparent; }
     .ribbon-btn:hover { background-color: #e2e8f0; border-color: #cbd5e1; }
     .ribbon-btn:active { transform: translateY(1px); }
-
-    .asc-cell-empty { background-color: #ffffff; transition: background-color 0.1s; }
+    .asc-cell-empty { background-color: #fff; transition: background-color 0.1s; }
     .asc-cell-empty:hover { background-color: #eff6ff; }
-    .asc-cell-timeoff {
-      background: repeating-linear-gradient(-45deg, #fee2e2, #fee2e2 5px, #fecaca 5px, #fecaca 10px);
-      color: #b91c1c; font-weight: bold; text-align: center;
-    }
-
+    .asc-cell-timeoff { background: repeating-linear-gradient(-45deg, #fee2e2, #fee2e2 5px, #fecaca 5px, #fecaca 10px);
+      color: #b91c1c; font-weight: bold; text-align: center; }
     .drop-valid { background-color: #86efac !important; outline: 2px solid #16a34a !important; }
     .drop-invalid { background-color: #fca5a5 !important; outline: 2px solid #dc2626 !important; }
-
-    .asc-card {
-      cursor: grab; user-select: none;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 1px 2px rgba(0,0,0,0.25);
-    }
+    .asc-card { cursor: grab; user-select: none;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 1px 2px rgba(0,0,0,0.25); }
     .asc-card:active { cursor: grabbing; }
-
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 4px; }
     ::-webkit-scrollbar-track { background: #f1f5f9; }
-
-    @media print {
-      .no-print { display: none !important; }
-      body, main { height: auto !important; overflow: visible !important; }
-    }
+    @media print { .no-print { display: none !important; } body, main { height: auto !important; overflow: visible !important; } }
   </style>
 </head>
 <body class="bg-slate-200 text-slate-800 h-screen flex flex-col overflow-hidden text-xs">
 
-  <!-- GERBANG LOGIN GMAIL (MULTI-SEKOLAH OTOMATIS) -->
+  <!-- LOGIN GATE -->
   <div id="loginGateModal" class="fixed inset-0 z-50 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 no-print">
     <div class="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 text-center space-y-4 border border-slate-300">
       <div class="w-12 h-12 bg-blue-600 text-white rounded-xl flex items-center justify-center mx-auto shadow">
@@ -63,7 +48,7 @@
     </div>
   </div>
 
-  <!-- 1. TOP MENU BAR ALA DESKTOP WINDOWS / aSc TIMETABLES -->
+  <!-- TOP MENU BAR -->
   <div class="bg-slate-800 text-slate-200 px-3 py-1 flex items-center justify-between text-[11px] shrink-0 no-print">
     <div class="flex items-center gap-4">
       <span class="font-bold text-amber-400 flex items-center gap-1.5">
@@ -82,72 +67,53 @@
     </div>
   </div>
 
-  <!-- 2. RIBBON TOOLBAR IKON BESAR KHAS aSc TIMETABLES -->
+  <!-- RIBBON TOOLBAR -->
   <header class="bg-gradient-to-b from-slate-50 to-slate-200 border-b border-slate-300 px-2 py-1.5 flex items-center gap-1 overflow-x-auto shrink-0 no-print shadow-sm">
     <button onclick="openUploadModal()" class="ribbon-btn text-blue-700" title="Upload Excel/CSV atau Backup JSON">
-      <i data-lucide="upload-cloud" class="w-5 h-5 mb-0.5"></i>
-      <span class="font-semibold text-[11px]">Upload Data</span>
+      <i data-lucide="upload-cloud" class="w-5 h-5 mb-0.5"></i><span class="font-semibold text-[11px]">Upload Data</span>
     </button>
-    <button onclick="exportBackupJson()" class="ribbon-btn text-slate-700" title="Simpan File Cadangan ke Komputer">
-      <i data-lucide="download" class="w-5 h-5 mb-0.5"></i>
-      <span class="text-[11px]">Download</span>
+    <button onclick="exportBackupJson()" class="ribbon-btn text-slate-700" title="Simpan File Cadangan">
+      <i data-lucide="download" class="w-5 h-5 mb-0.5"></i><span class="text-[11px]">Download</span>
     </button>
-
     <div class="h-9 w-px bg-slate-300 mx-1"></div>
-
     <button onclick="openMasterModal('SCHOOL')" class="ribbon-btn text-slate-700">
-      <i data-lucide="school" class="w-5 h-5 mb-0.5 text-indigo-600"></i>
-      <span class="text-[11px]">Sekolah</span>
+      <i data-lucide="school" class="w-5 h-5 mb-0.5 text-indigo-600"></i><span class="text-[11px]">Sekolah</span>
     </button>
     <button onclick="openMasterModal('SUBJECTS')" class="ribbon-btn text-slate-700">
-      <i data-lucide="book-open" class="w-5 h-5 mb-0.5 text-blue-600"></i>
-      <span class="text-[11px]">Mapel</span>
+      <i data-lucide="book-open" class="w-5 h-5 mb-0.5 text-blue-600"></i><span class="text-[11px]">Mapel</span>
     </button>
     <button onclick="openMasterModal('CLASSES')" class="ribbon-btn text-slate-700">
-      <i data-lucide="users" class="w-5 h-5 mb-0.5 text-emerald-600"></i>
-      <span class="text-[11px]">Kelas</span>
+      <i data-lucide="users" class="w-5 h-5 mb-0.5 text-emerald-600"></i><span class="text-[11px]">Kelas</span>
     </button>
     <button onclick="openMasterModal('ROOMS')" class="ribbon-btn text-slate-700">
-      <i data-lucide="door-open" class="w-5 h-5 mb-0.5 text-amber-600"></i>
-      <span class="text-[11px]">Ruangan</span>
+      <i data-lucide="door-open" class="w-5 h-5 mb-0.5 text-amber-600"></i><span class="text-[11px]">Ruangan</span>
     </button>
     <button onclick="openMasterModal('TEACHERS')" class="ribbon-btn text-slate-700">
-      <i data-lucide="graduation-cap" class="w-5 h-5 mb-0.5 text-purple-600"></i>
-      <span class="text-[11px]">Guru</span>
+      <i data-lucide="graduation-cap" class="w-5 h-5 mb-0.5 text-purple-600"></i><span class="text-[11px]">Guru</span>
     </button>
     <button onclick="openMasterModal('CONTRACTS')" class="ribbon-btn text-slate-700">
-      <i data-lucide="layers" class="w-5 h-5 mb-0.5 text-rose-600"></i>
-      <span class="font-semibold text-[11px]">Pelajaran</span>
+      <i data-lucide="layers" class="w-5 h-5 mb-0.5 text-rose-600"></i><span class="font-semibold text-[11px]">Pelajaran</span>
     </button>
-
     <div class="h-9 w-px bg-slate-300 mx-1"></div>
-
     <button onclick="openGeneratorModal()" class="ribbon-btn bg-amber-100/80 border-amber-300 text-amber-900">
-      <i data-lucide="cpu" class="w-5 h-5 mb-0.5 text-amber-600"></i>
-      <span class="font-bold text-[11px]">Generate</span>
+      <i data-lucide="cpu" class="w-5 h-5 mb-0.5 text-amber-600"></i><span class="font-bold text-[11px]">Generate</span>
     </button>
     <button onclick="checkAndShowConflicts()" class="ribbon-btn text-slate-700">
-      <i data-lucide="shield-check" class="w-5 h-5 mb-0.5 text-emerald-600"></i>
-      <span class="text-[11px]" id="ribbonConflictText">Cek Bentrok</span>
+      <i data-lucide="shield-check" class="w-5 h-5 mb-0.5 text-emerald-600"></i><span class="text-[11px]" id="ribbonConflictText">Cek Bentrok</span>
     </button>
     <button onclick="undoAction()" id="btnUndo" disabled class="ribbon-btn text-slate-700 disabled:opacity-35">
-      <i data-lucide="undo-2" class="w-5 h-5 mb-0.5"></i>
-      <span class="text-[11px]">Undo</span>
+      <i data-lucide="undo-2" class="w-5 h-5 mb-0.5"></i><span class="text-[11px]">Undo</span>
     </button>
-
     <div class="h-9 w-px bg-slate-300 mx-1"></div>
-
     <button onclick="saveDraftToCloud()" class="ribbon-btn text-blue-800">
-      <i data-lucide="save" class="w-5 h-5 mb-0.5 text-blue-600"></i>
-      <span class="font-semibold text-[11px]">Simpan Cloud</span>
+      <i data-lucide="save" class="w-5 h-5 mb-0.5 text-blue-600"></i><span class="font-semibold text-[11px]">Simpan Cloud</span>
     </button>
     <button onclick="publishToStudents()" class="ribbon-btn bg-emerald-600 hover:bg-emerald-700 text-white ml-auto">
-      <i data-lucide="send" class="w-5 h-5 mb-0.5"></i>
-      <span class="font-bold text-[11px]">Publish Siswa</span>
+      <i data-lucide="send" class="w-5 h-5 mb-0.5"></i><span class="font-bold text-[11px]">Publish Siswa</span>
     </button>
   </header>
 
-  <!-- 3. FILTER BAR & INFO STATUS DRAG -->
+  <!-- FILTER BAR -->
   <div class="bg-slate-100 border-b border-slate-300 px-3 py-1 flex items-center justify-between shrink-0 no-print">
     <div class="flex items-center gap-2">
       <span class="font-semibold text-slate-600">Tampilan Baris:</span>
@@ -160,11 +126,9 @@
         <option value="ALL">Semua Hari</option>
       </select>
     </div>
-
     <div id="statusMessageBar" class="font-semibold text-blue-700 truncate max-w-lg">
       Klik kartu untuk mengedit/mengunci • Klik kotak kosong untuk pasang cepat • Seret kartu untuk pindah
     </div>
-
     <div class="flex items-center gap-1">
       <button onclick="changeZoom(-10)" class="px-2 py-0.5 bg-white border border-slate-300 rounded hover:bg-slate-50">-</button>
       <span id="zoomLabel" class="w-10 text-center font-mono">100%</span>
@@ -172,7 +136,7 @@
     </div>
   </div>
 
-  <!-- 4. KANVAS UTAMA (FULL WIDTH GRID MATRIKS ALA aSc TIMETABLES) -->
+  <!-- KANVAS UTAMA -->
   <main class="flex-1 overflow-auto bg-slate-300/60 p-2 relative">
     <table id="matrixTable" class="border-collapse bg-white shadow-sm origin-top-left transition-transform">
       <thead id="matrixHead" class="sticky top-0 z-20"></thead>
@@ -180,185 +144,37 @@
     </table>
   </main>
 
-<!-- WIDGET ASISTEN GEMINI AI (POJOK KANAN BAWAH) -->
-<div class="fixed bottom-4 right-4 z-50 font-sans">
-  <div id="aiAssistantPanel" style="display: none;" class="mb-2 w-80 sm:w-96 bg-white border-2 border-blue-600 rounded-xl shadow-2xl overflow-hidden flex-col">
-    <div class="bg-blue-700 text-white px-3.5 py-2.5 flex justify-between items-center font-bold text-xs">
-      <span class="flex items-center gap-1.5">✨ Asisten Jadwal Gemini AI</span>
-      <button type="button" onclick="toggleAiPanel()" class="text-white hover:text-blue-200 text-sm leading-none px-1">✕</button>
-    </div>
-
-    <div id="aiChatLog" class="p-3 h-60 overflow-y-auto space-y-2 text-xs bg-slate-50">
-      <div class="bg-blue-100 text-blue-950 p-2.5 rounded-lg leading-relaxed">
-        Halo! Ketik keinginan pengaturan jadwal Anda dalam bahasa sehari-hari, contohnya:<br><br>
-        • <i>"Setiap Senin jam 1 blokir untuk Upacara."</i><br>
-        • <i>"Guru kode a21 libur penuh hari Senin."</i><br>
-        • <i>"Guru kode a5 jangan dikasih jam 9 dan 10."</i><br>
-        • <i>"Susun ulang jadwal otomatis sekarang."</i>
+  <!-- WIDGET ASISTEN GEMINI AI -->
+  <div class="fixed bottom-4 right-4 z-50 font-sans">
+    <div id="aiAssistantPanel" style="display: none;" class="mb-2 w-80 sm:w-96 bg-white border-2 border-blue-600 rounded-xl shadow-2xl overflow-hidden flex-col">
+      <div class="bg-blue-700 text-white px-3.5 py-2.5 flex justify-between items-center font-bold text-xs">
+        <span class="flex items-center gap-1.5">✨ Asisten Jadwal Gemini AI</span>
+        <button type="button" onclick="toggleAiPanel()" class="text-white hover:text-blue-200 text-sm leading-none px-1">✕</button>
+      </div>
+      <div id="aiChatLog" class="p-3 h-60 overflow-y-auto space-y-2 text-xs bg-slate-50">
+        <div class="bg-blue-100 text-blue-950 p-2.5 rounded-lg leading-relaxed">
+          Halo! Ketik keinginan pengaturan jadwal Anda dalam bahasa sehari-hari, contohnya:<br><br>
+          • <i>"Setiap Senin jam 1 blokir untuk Upacara."</i><br>
+          • <i>"Guru kode a21 libur penuh hari Senin."</i><br>
+          • <i>"Guru kode a5 jangan dikasih jam 9 dan 10."</i><br>
+          • <i>"Susun ulang jadwal otomatis sekarang."</i>
+        </div>
+      </div>
+      <div class="p-2 border-t border-slate-200 bg-white flex gap-1.5">
+        <input id="aiPromptInput" type="text" onkeydown="if(event.key==='Enter') sendAiCommand()"
+          placeholder="Ketik perintah jadwal di sini..."
+          class="flex-1 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-600">
+        <button type="button" id="btnSendAi" onclick="sendAiCommand()"
+          class="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold transition">Kirim</button>
       </div>
     </div>
-
-    <div class="p-2 border-t border-slate-200 bg-white flex gap-1.5">
-      <input id="aiPromptInput" type="text" onkeydown="if(event.key==='Enter') sendAiCommand()"
-        placeholder="Ketik perintah jadwal di sini..."
-        class="flex-1 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-600">
-      <button type="button" id="btnSendAi" onclick="sendAiCommand()"
-        class="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold transition">
-        Kirim
-      </button>
-    </div>
+    <button type="button" onclick="toggleAiPanel()"
+      class="ml-auto flex items-center gap-1.5 bg-blue-700 hover:bg-blue-800 text-white px-4 py-2.5 rounded-full shadow-lg font-bold text-xs transition cursor-pointer">
+      ✨ Perintahkan AI membantu
+    </button>
   </div>
 
-  <button type="button" onclick="toggleAiPanel()"
-    class="ml-auto flex items-center gap-1.5 bg-blue-700 hover:bg-blue-800 text-white px-4 py-2.5 rounded-full shadow-lg font-bold text-xs transition cursor-pointer">
-    ✨ Perintahkan AI membantu
-  </button>
-</div>
-
-<script>
-  window.toggleAiPanel = function() {
-    var panel = document.getElementById('aiAssistantPanel');
-    if (!panel) return;
-    if (panel.style.display === 'none' || panel.style.display === '') {
-      panel.style.display = 'flex';
-      var inp = document.getElementById('aiPromptInput');
-      if (inp) inp.focus();
-    } else {
-      panel.style.display = 'none';
-    }
-  };
-
-  window.sendAiCommand = async function() {
-  const input = document.getElementById('aiPromptInput');
-  const log = document.getElementById('aiChatLog');
-  const btnSend = document.getElementById('btnSendAi');
-  const prompt = input.value.trim();
-  if (!prompt) return;
-
-  if (!window.state) {
-    log.innerHTML += `<div class="bg-rose-100 text-rose-800 p-2.5 rounded-lg mr-6">⚠️ Data jadwal belum siap. Tunggu login selesai.</div>`;
-    log.scrollTop = log.scrollHeight;
-    return;
-  }
-
-  log.innerHTML += `<div class="bg-slate-200 text-slate-800 p-2.5 rounded-lg ml-6">${escapeHtml(prompt)}</div>`;
-  input.value = '';
-  log.scrollTop = log.scrollHeight;
-
-  const loadingId = 'loading_' + Date.now();
-  log.innerHTML += `<div id="${loadingId}" class="text-slate-500 italic p-2 text-xs">AI sedang memproses...</div>`;
-  log.scrollTop = log.scrollHeight;
-  btnSend.disabled = true;
-  btnSend.classList.add('opacity-50');
-
-  try {
-    // Pakai workerUrl dari state config (bukan hardcoded!) — fallback ke default
-    const workerBase = (window.state?.config?.workerUrl || 'https://pembuat-jadwal.yhanedy.workers.dev').replace(/\/$/, '');
-
-    const context = {
-      days: window.state.config.days || [],
-      periodsPerDay: window.state.config.periodsPerDay || 10,
-      teachers: (window.state.teachers || []).map(t => ({ id: t.id, name: t.name, code: t.code })),
-      subjects: (window.state.subjects || []).map(s => ({ id: s.id, name: s.name }))
-    };
-
-    const response = await fetch(`${workerBase}/api/ai-command`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, context })
-    });
-
-    const data = await response.json();
-    const loadingEl = document.getElementById(loadingId);
-    if (loadingEl) loadingEl.remove();
-
-    // Tampilkan balasan
-    let teksBalasan = data.reply || (data.error ? '⚠️ ' + data.error : 'Tidak ada balasan.');
-    log.innerHTML += `<div class="bg-blue-100 text-blue-950 p-2.5 rounded-lg mr-6">${escapeHtml(teksBalasan)}</div>`;
-
-    // Eksekusi aksi
-    if (Array.isArray(data.actions) && data.actions.length > 0 && window.mutate) {
-      let aksiTerlaksana = [];
-      data.actions.forEach(action => {
-        try {
-          if (action.type === 'SET_GLOBAL_BLOCK' && Array.isArray(action.periodIndexes)) {
-            window.mutate(d => {
-              if (!d.config.globalBlocked) d.config.globalBlocked = {};
-              action.periodIndexes.forEach(p => {
-                d.config.globalBlocked[`${action.dayIndex}-${p}`] = action.label || 'Blokir AI';
-              });
-            });
-            aksiTerlaksana.push(`blokir ${action.label || 'jam'} hari ${context.days[action.dayIndex]}`);
-          }
-          else if (action.type === 'CLEAR_GLOBAL_BLOCK' && Array.isArray(action.periodIndexes)) {
-            window.mutate(d => {
-              action.periodIndexes.forEach(p => {
-                delete d.config.globalBlocked?.[`${action.dayIndex}-${p}`];
-              });
-            });
-            aksiTerlaksana.push(`hapus blokir hari ${context.days[action.dayIndex]}`);
-          }
-          else if (action.type === 'SET_TEACHER_TIMEOFF' && Array.isArray(action.teacherIds) && Array.isArray(action.periodIndexes)) {
-            window.mutate(d => {
-              action.teacherIds.forEach(tid => {
-                const t = d.teachers.find(x => x.id === tid);
-                if (!t) return;
-                if (!t.timeOff) t.timeOff = {};
-                action.periodIndexes.forEach(p => { t.timeOff[`${action.dayIndex}-${p}`] = true; });
-              });
-            });
-            aksiTerlaksana.push(`libur ${action.teacherIds.length} guru`);
-          }
-          else if (action.type === 'CLEAR_TEACHER_TIMEOFF' && Array.isArray(action.teacherIds) && Array.isArray(action.periodIndexes)) {
-            window.mutate(d => {
-              action.teacherIds.forEach(tid => {
-                const t = d.teachers.find(x => x.id === tid);
-                if (!t?.timeOff) return;
-                action.periodIndexes.forEach(p => { delete t.timeOff[`${action.dayIndex}-${p}`]; });
-              });
-            });
-            aksiTerlaksana.push(`hapus libur guru`);
-          }
-          else if (action.type === 'SET_DAY_MAX_PERIOD' && action.maxPeriod) {
-            window.mutate(d => {
-              const dayName = d.config.days[action.dayIndex];
-              if (!d.config.dayMaxPeriods) d.config.dayMaxPeriods = {};
-              d.config.dayMaxPeriods[dayName] = action.maxPeriod;
-            });
-            aksiTerlaksana.push(`batasi ${context.days[action.dayIndex]} sampai jam ${action.maxPeriod}`);
-          }
-          else if (action.type === 'RUN_GENERATE' && typeof window.startWorkerGeneration === 'function') {
-            window.startWorkerGeneration();
-            aksiTerlaksana.push('jalankan generator otomatis');
-          }
-        } catch (e) {
-          aksiTerlaksana.push(`gagal: ${action.type} (${e.message})`);
-        }
-      });
-
-      if (aksiTerlaksana.length > 0) {
-        log.innerHTML += `<div class="text-emerald-600 text-[10px] italic p-1 ml-2">✓ ${escapeHtml(aksiTerlaksana.join(', '))}</div>`;
-        if (window.renderGrid) window.renderGrid();
-      }
-    }
-  } catch (error) {
-    const loadingEl = document.getElementById(loadingId);
-    if (loadingEl) loadingEl.remove();
-    log.innerHTML += `<div class="bg-rose-100 text-rose-800 p-2.5 rounded-lg mr-6">⚠️ Koneksi error: ${escapeHtml(error.message)}</div>`;
-    console.error('[AI] Error:', error);
-  } finally {
-    btnSend.disabled = false;
-    btnSend.classList.remove('opacity-50');
-    log.scrollTop = log.scrollHeight;
-  }
-};
-
-// Helper kecil untuk cegah XSS saat echo prompt
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
-}
-</script>
-  <!-- 5. DOCK KARTU BAWAH (UNPLACED CARDS STRIP KHAS aSc TIMETABLES) -->
+  <!-- DOCK KARTU BAWAH -->
   <section class="h-28 bg-slate-100 border-t-2 border-slate-400 flex flex-col shrink-0 no-print">
     <div class="bg-slate-200 px-3 py-1 border-b border-slate-300 flex items-center justify-between">
       <div class="flex items-center gap-3">
@@ -375,7 +191,7 @@ function escapeHtml(s) {
     <div id="bottomCardDeck" class="flex-1 overflow-x-auto overflow-y-hidden p-2 flex items-center gap-2"></div>
   </section>
 
-  <!-- POPOVER KLIK SEL KOSONG / EDIT KARTU DI TEMPAT -->
+  <!-- POPOVER -->
   <div id="slotPopover" class="hidden fixed z-50 w-72 bg-white rounded-lg shadow-2xl border border-slate-400 p-3 space-y-2.5">
     <div class="flex justify-between items-center border-b pb-1.5 font-bold text-slate-800">
       <span id="popoverTitle">Pasang Kartu Jadwal</span>
@@ -384,54 +200,52 @@ function escapeHtml(s) {
     <div id="popoverBody" class="space-y-2"></div>
   </div>
 
-  <!-- MODAL EDIT DATA MASTER -->
+  <!-- MODAL MASTER -->
   <div id="modalMaster" class="hidden fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
     <div class="bg-white rounded-lg shadow-2xl border border-slate-400 w-full max-w-4xl max-h-[88vh] flex flex-col overflow-hidden">
       <div class="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
         <span class="font-bold text-sm flex items-center gap-2"><i data-lucide="database" class="w-4 h-4 text-amber-400"></i> Edit Data Master & Pelajaran</span>
         <button onclick="closeMasterModal()" class="hover:text-rose-400 font-bold">✕</button>
       </div>
-
-      <div class="bg-slate-100 border-b border-slate-300 px-3 pt-2 flex gap-1">
-        <button onclick="switchMasterTab('SCHOOL')" id="mtab-SCHOOL" class="px-3 py-1.5 rounded-t font-semibold border border-b-0 bg-white">1. Sekolah & Jam</button>
-        <button onclick="switchMasterTab('SUBJECTS')" id="mtab-SUBJECTS" class="px-3 py-1.5 rounded-t font-semibold text-slate-600">2. Mata Pelajaran</button>
-        <button onclick="switchMasterTab('CLASSES')" id="mtab-CLASSES" class="px-3 py-1.5 rounded-t font-semibold text-slate-600">3. Kelas</button>
-        <button onclick="switchMasterTab('ROOMS')" id="mtab-ROOMS" class="px-3 py-1.5 rounded-t font-semibold text-slate-600">4. Ruangan</button>
-        <button onclick="switchMasterTab('TEACHERS')" id="mtab-TEACHERS" class="px-3 py-1.5 rounded-t font-semibold text-slate-600">5. Guru</button>
-        <button onclick="switchMasterTab('CONTRACTS')" id="mtab-CONTRACTS" class="px-3 py-1.5 rounded-t font-bold text-blue-700">6. Pelajaran (Kartu)</button>
+      <div class="bg-slate-100 border-b border-slate-300 px-3 pt-2 flex gap-1 overflow-x-auto">
+        <button onclick="switchMasterTab('SCHOOL')" id="mtab-SCHOOL" class="px-3 py-1.5 rounded-t font-semibold border border-b-0 bg-white whitespace-nowrap">1. Sekolah & Jam</button>
+        <button onclick="switchMasterTab('SUBJECTS')" id="mtab-SUBJECTS" class="px-3 py-1.5 rounded-t font-semibold text-slate-600 whitespace-nowrap">2. Mata Pelajaran</button>
+        <button onclick="switchMasterTab('CLASSES')" id="mtab-CLASSES" class="px-3 py-1.5 rounded-t font-semibold text-slate-600 whitespace-nowrap">3. Kelas</button>
+        <button onclick="switchMasterTab('ROOMS')" id="mtab-ROOMS" class="px-3 py-1.5 rounded-t font-semibold text-slate-600 whitespace-nowrap">4. Ruangan</button>
+        <button onclick="switchMasterTab('TEACHERS')" id="mtab-TEACHERS" class="px-3 py-1.5 rounded-t font-semibold text-slate-600 whitespace-nowrap">5. Guru</button>
+        <button onclick="switchMasterTab('CONTRACTS')" id="mtab-CONTRACTS" class="px-3 py-1.5 rounded-t font-bold text-blue-700 whitespace-nowrap">6. Pelajaran (Kartu)</button>
       </div>
-
       <div id="masterModalBody" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
-
       <div class="bg-slate-100 border-t border-slate-300 px-4 py-2 flex justify-end">
         <button onclick="closeMasterModal()" class="bg-blue-600 text-white px-4 py-1.5 rounded font-bold hover:bg-blue-700">Selesai & Tutup</button>
       </div>
     </div>
   </div>
 
-  <!-- MODAL MENU UPLOAD -->
+  <!-- MODAL UPLOAD -->
   <div id="modalUpload" class="hidden fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
-    <div class="bg-white rounded-lg shadow-2xl border border-slate-400 w-full max-w-2xl overflow-hidden">
-      <div class="bg-blue-800 text-white px-4 py-2.5 flex items-center justify-between">
+    <div class="bg-white rounded-lg shadow-2xl border border-slate-400 w-full max-w-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+      <div class="bg-blue-800 text-white px-4 py-2.5 flex items-center justify-between sticky top-0">
         <span class="font-bold text-sm flex items-center gap-2"><i data-lucide="upload-cloud" class="w-4 h-4"></i> Menu Upload & Import Data Jadwal</span>
         <button onclick="closeUploadModal()" class="hover:text-rose-300 font-bold">✕</button>
       </div>
-
       <div class="p-4 space-y-4">
         <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
-          <div class="font-bold text-blue-900">Cara 1: Upload File CSV (Dari Excel) atau File Backup (.JSON)</div>
-          <p class="text-slate-600">Format kolom CSV: <code class="bg-white px-1 border">Guru,KodeGuru,Mapel,KodeMapel,Kelas,Ruang,Pertemuan,JamPerPertemuan</code></p>
+          <div class="font-bold text-blue-900">Cara 1: Upload File Excel (.xlsx), CSV, atau Backup (.JSON)</div>
+          <p class="text-slate-600">Mendukung <b>2 format</b>:<br>
+            • <b>MATRIKS</b>: <code class="bg-white px-1 border">Guru | Kode | Mapel | X1 | X2 | X3 ...</code> (isi = total jam/minggu)<br>
+            • <b>LONG</b>: <code class="bg-white px-1 border">Guru | Kode | Mapel | Kelas | JamPerPertemuan | Pertemuan | Ruang</code>
+          </p>
           <div class="flex flex-wrap items-center gap-2 pt-1">
-            <input type="file" id="uploadFileInput" accept=".csv,.json,.txt" class="text-xs bg-white border border-slate-300 rounded p-1">
+            <input type="file" id="uploadFileInput" accept=".csv,.json,.txt,.xlsx,.xls" class="text-xs bg-white border border-slate-300 rounded p-1">
             <button onclick="processUploadedFile()" class="bg-blue-600 text-white px-3 py-1.5 rounded font-bold hover:bg-blue-700">Proses File</button>
-            <button onclick="downloadCsvTemplate()" class="bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded hover:bg-slate-50 ml-auto">📥 Download Contoh CSV</button>
+            <button onclick="downloadCsvTemplate()" class="bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded hover:bg-slate-50 ml-auto">📥 Download Template</button>
           </div>
         </div>
-
         <div class="p-3 bg-slate-50 border border-slate-300 rounded-lg space-y-2">
-          <div class="font-bold text-slate-800">Cara 2: Copy-Paste Langsung dari Microsoft Excel / Google Sheets</div>
-          <p class="text-slate-600">Blok baris data pembagian tugas mengajar di Excel (urutan kolom sama seperti di atas), lalu tempel di kotak bawah ini:</p>
-          <textarea id="pasteExcelArea" rows="5" placeholder="Contoh:&#10;Pak Budi	BUD	Matematika	MTK	7A	R.7A	2	2&#10;Bu Siti	SIT	Bahasa Indonesia	IND	7A	R.7A	2	2" class="w-full border border-slate-300 rounded p-2 font-mono text-[11px]"></textarea>
+          <div class="font-bold text-slate-800">Cara 2: Copy-Paste Langsung dari Excel / Google Sheets</div>
+          <p class="text-slate-600">Blok baris data pembagian tugas mengajar di Excel, lalu tempel di kotak bawah ini (bisa pakai tab, koma, atau titik-koma sebagai pemisah):</p>
+          <textarea id="pasteExcelArea" rows="5" placeholder="Contoh MATRIKS:&#10;Pak Budi	BUD	Matematika	MTK	EXACT	4	4	4&#10;Bu Siti	SIT	Bahasa Indonesia	IND	LANG	4	4	0&#10;&#10;Contoh LONG:&#10;Pak Budi	BUD	Matematika	MTK	EXACT	7A	2	2	R.7A" class="w-full border border-slate-300 rounded p-2 font-mono text-[11px]"></textarea>
           <div class="flex justify-end gap-2">
             <button onclick="closeUploadModal()" class="px-3 py-1.5 rounded bg-slate-200">Batal</button>
             <button onclick="processPastedExcel()" class="bg-emerald-600 text-white px-4 py-1.5 rounded font-bold hover:bg-emerald-700">Import Data ke Jadwal</button>
@@ -441,7 +255,7 @@ function escapeHtml(s) {
     </div>
   </div>
 
-  <!-- MODAL GENERATOR OTOMATIS -->
+  <!-- MODAL GENERATOR -->
   <div id="modalGenerator" class="hidden fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
     <div class="bg-white rounded-lg shadow-2xl border border-slate-400 max-w-md w-full p-4 space-y-3">
       <div class="font-bold text-sm border-b pb-2 flex justify-between">
